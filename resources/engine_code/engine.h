@@ -57,6 +57,7 @@ private:
 
 // OpenGL Handles
     GLuint display_texture;
+    GLuint accumulator_texture;
     GLuint display_shader;
 	GLuint display_vao;
 	GLuint display_vbo;
@@ -71,10 +72,14 @@ private:
 	GLuint raymarch_shader;
 
 // raymarcher state
-	// rotation
-	float rotation_about_x = 0.;
-	float rotation_about_y = 0.;
-	float rotation_about_z = 0.;
+// frst scene
+	// float rotation_about_x = -0.66;
+	// float rotation_about_y = -0.63;
+	// float rotation_about_z = 1.38;
+// second scene
+	float rotation_about_x = -0.16;
+	float rotation_about_y = 0.47;
+	float rotation_about_z = 1.38;
 
 	// base color
 	glm::vec3 basic_diffuse = glm::vec3(45./255., 45./255., 45./255.);
@@ -118,23 +123,26 @@ private:
 	float orbit3 = 100;
 
 	// light positions
-	glm::vec3 lightPos1 = glm::vec3( 0.1, 0., 0.);
-    glm::vec3 lightPos2 = glm::vec3( 0., 0.1, 0.);
+	glm::vec3 lightPos1 = glm::vec3( 0.04, 0., 0.1);
+    glm::vec3 lightPos2 = glm::vec3( 0., 0.04, 0.1);
     glm::vec3 lightPos3 = glm::vec3( 0., 0., 0.1);
 
-	float AO_scale = 0.7;
+	float AO_scale = 1.;
 	float depth_scale = 1.;
 	int depth_selector = 8;	
 
 	float fov = 1.;
 
 	// position
-	glm::vec3 position = glm::vec3(1., 1., 1.);
+// first arrangment
+	// glm::vec3 position = glm::vec3(0.496222, -0.595141, -2.119943);
+// second arrangment
+	glm::vec3 position = glm::vec3(-1.709170, 0.093756, -1.045113);
 
 	glm::vec3 basis_x, basis_y, basis_z;
 
-	float gamma_correction = 1.244;
-	int current_tmode = 3;
+	float gamma_correction = 0.44;
+	int current_tmode = 6;
     int current_colorspace = CHROMAMAX;
     int current_noise_func = BAYER;
     int current_dither_mode = EXPONENTIAL;

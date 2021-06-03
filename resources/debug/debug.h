@@ -28,7 +28,7 @@ void MessageCallback( GLenum source,
     fprintf( stderr, "        GL CALLBACK: %s type = 0x%x, severity = GL_DEBUG_SEVERITY_LOW, message = %s\n",
            ( type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : "" ), type, message );
 
-  bool show_notification_severity = false;
+  bool show_notification_severity = true;
   if(severity == GL_DEBUG_SEVERITY_NOTIFICATION && show_notification_severity)
     fprintf( stderr, "        GL CALLBACK: %s type = 0x%x, severity = GL_DEBUG_SEVERITY_NOTIFICATION, message = %s\n",
            ( type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : "" ), type, message );

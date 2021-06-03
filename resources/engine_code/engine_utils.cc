@@ -344,15 +344,20 @@ void engine::gl_setup() {
 //  ╩╚═└─┘┘└┘─┴┘└─┘┴└─   ╩ └─┘┴ └─ ┴ └─┘┴└─└─┘
   {// initialize image data for the render texture
     std::vector<uint8_t> image_data;
-    image_data.resize(WIDTH * HEIGHT * 4, 0);
+    image_data.resize(WIDTH * HEIGHT * 8, 127);
 
     // create the render texture used in the compute shaders
     glGenTextures(1, &display_texture);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_RECTANGLE, display_texture);
-    // glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA8, WIDTH, HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, &image_data[0]);
-    glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA8UI, WIDTH, HEIGHT, 0, GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, &image_data[0]);
+    glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA8UI, WIDTH, HEIGHT, 0, GL_RGBA_INTEGER, GL_UNSIGNED_BYTE, 0);
     glBindImageTexture(0, display_texture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8UI);
+
+    glGenTextures(1, &accumulator_texture);
+    glActiveTexture(GL_TEXTURE0+1);
+    glBindTexture(GL_TEXTURE_RECTANGLE, accumulator_texture);
+    glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA32F, WIDTH, HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, &image_data[0]);
+    glBindImageTexture(1, accumulator_texture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
   }
 
 //  ╔╦╗┬┌┬┐┬ ┬┌─┐┬─┐  ╔╦╗┌─┐─┐ ┬┌┬┐┬ ┬┬─┐┌─┐┌─┐
@@ -379,7 +384,7 @@ void engine::gl_setup() {
 
     // send it - known 8x8 dimension
     glGenTextures(1, &dither_bayer);
-    glActiveTexture(GL_TEXTURE0+1);
+    glActiveTexture(GL_TEXTURE0+2);
     glBindTexture(GL_TEXTURE_2D, dither_bayer);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
@@ -404,7 +409,7 @@ void engine::gl_setup() {
 
     // send it - variable size possible in the header, but right now I'm hard coding 64x64
     glGenTextures(1, &dither_blue);
-    glActiveTexture(GL_TEXTURE0+2);
+    glActiveTexture(GL_TEXTURE0+3);
     glBindTexture(GL_TEXTURE_2D, dither_blue);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
