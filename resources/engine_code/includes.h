@@ -88,7 +88,7 @@ using json = nlohmann::json;
 // #define WIDTH 2048
 // #define HEIGHT 2048
 
-#define TILESIZE 32
+#define TILESIZE 64
 
 
 #endif

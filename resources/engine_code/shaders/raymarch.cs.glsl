@@ -65,6 +65,15 @@ uniform int x_offset;
 uniform int y_offset;
 
 
+ivec2 global_loc = ivec2(gl_GlobalInvocationID.xy) + ivec2(x_offset, y_offset);
+ivec2 dimensions = ivec2(imageSize(accum));
+vec2 fdimensions = vec2(dimensions);
+
+
+
+
+
+
 // tonemapping stuff
 // APPROX
 // --------------------------
@@ -1625,61 +1634,45 @@ float calcAO( in vec3 pos, in vec3 nor )
     return clamp( 1.0 - 1.5*occ, 0.0, 1.0 );
 }
 
+
 void main()
 {
 
     // imageStore(current, ivec2(gl_GlobalInvocationID.xy), uvec4( 120, 45, 12, 255 ));
-    ivec2 global_loc = ivec2(gl_GlobalInvocationID.xy) + ivec2(x_offset, y_offset);
-    ivec2 dimensions = ivec2(imageSize(accum));
 
+    if(global_loc.x < dimensions.x && global_loc.y < dimensions.y)  // we are good to check the ray against the AABB
+    { 
+        vec4 col = vec4(0, 0, 0, 1);
+        vec2 pixcoord = (vec2(global_loc.xy)-(fdimensions/2.)) / (fdimensions/2.);
+        vec3 ro = ray_origin;
+
+        float aspect_ratio = float(dimensions.x) / float(dimensions.y);
+        vec3 rd = normalize(aspect_ratio*pixcoord.x*basis_x + pixcoord.y*basis_y + (1./fov)*basis_z);
     
-    vec4 col = vec4(0, 0, 0, 1);
-    float dresult_avg = 0.;
+        escape = 0.;
+        float dresult = raymarch(ro, rd);
+        float escape_result = escape;
 
-    vec2 pixcoord = (vec2(global_loc.xy)-vec2(dimensions)/2.) / (vec2(dimensions)/2.);
-    vec3 ro = ray_origin;
+        vec3 lightpos = vec3(2*sin(time), 2., 2*cos(time));
 
-    float aspect_ratio;
-    // aspect_ratio = 1.618;
-    aspect_ratio = float(imageSize(current).x) / float(imageSize(current).y);
-    vec3 rd = normalize(aspect_ratio*pixcoord.x*basis_x + pixcoord.y*basis_y + (1./fov)*basis_z);
+        vec3 hitpos = ro+dresult*rd;
+        vec3 normal = norm(hitpos);
 
-    escape = 0.;
-    float dresult = raymarch(ro, rd);
-    float escape_result = escape;
+        vec3 shadow_ro = hitpos+normal*EPSILON;
 
-    vec3 lightpos = vec3(2*sin(time), 2., 2*cos(time));
+        vec3 sresult1 = phong_lighting(1, hitpos, normal, shadow_ro) * flickerfactor1;
+        vec3 sresult2 = phong_lighting(2, hitpos, normal, shadow_ro) * flickerfactor2;
+        vec3 sresult3 = phong_lighting(3, hitpos, normal, shadow_ro) * flickerfactor3;
 
-    vec3 hitpos = ro+dresult*rd;
-    vec3 normal = norm(hitpos);
-
-    vec3 shadow_ro = hitpos+normal*EPSILON;
-
-    vec3 sresult1 = vec3(0.);
-    vec3 sresult2 = vec3(0.);
-    vec3 sresult3 = vec3(0.);
+        vec3 palatte_read = 0.4 * basic_diffuse * pal( escape_result, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20) );
         
-    sresult1 = phong_lighting(1, hitpos, normal, shadow_ro) * flickerfactor1;
-    sresult2 = phong_lighting(2, hitpos, normal, shadow_ro) * flickerfactor2;
-    sresult3 = phong_lighting(3, hitpos, normal, shadow_ro) * flickerfactor3;
-    // sresult1 = phong_lighting(1, hitpos, normal, ro) * flickerfactor1;
-    // sresult2 = phong_lighting(2, hitpos, normal, ro) * flickerfactor2;
-    // sresult3 = phong_lighting(3, hitpos, normal, ro) * flickerfactor3;
-        
-    // vec3 temp = ((norm(hitpos)/2.)+vec3(0.5)); // visualizing normal vector
-        
-    vec3 palatte_read = 0.4 * basic_diffuse * pal( escape_result, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20) );
-        
-    // apply lighting
-    vec3 temp = palatte_read * (sresult1 + sresult2  + sresult3);
+        // apply lighting
+        col.xyz = palatte_read * (sresult1 + sresult2  + sresult3);
 
-    temp *= ((1./AO_scale) * calcAO(shadow_ro, normal)); // ambient occlusion calculation
-
-    // compute the depth scale term
-    float depth_term = dresult * depth_scale; 
-
-    switch(depth_falloff)
-    {
+        // compute the depth scale term
+        float depth_term = dresult * depth_scale; 
+        switch(depth_falloff)
+        {
             case 0: depth_term = 0.;
             case 1: depth_term = 2.-2.*(1./(1.-depth_term)); break;
             case 2: depth_term = 1.-(1./(1+0.1*depth_term*depth_term)); break;
@@ -1693,69 +1686,71 @@ void main()
             case 8: depth_term = (sqrt(depth_term)/8.) * depth_term; break;
             case 9: depth_term = sqrt(depth_term/9.); break;
             case 10: depth_term = pow(depth_term/10., 2.); break;
-            case 11: depth_term = dresult_avg/MAX_DIST;
+            case 11: depth_term = dresult/MAX_DIST;
             default: break;
+        }
+        // do a mix here, between col and the fog color, with the selected depth falloff term
+        col.rgb = mix(col.rgb, fog_color.rgb, depth_term);
+
+        // color stuff happens here, because the imageStore will be quantizing to 8 bit
+        // tonemapping 
+        switch(tonemap_mode)
+        {
+            case 0: // None (Linear)
+                break;
+            case 1: // ACES (Narkowicz 2015)
+                col.xyz = cheapo_aces_approx(col.xyz);
+                break;
+            case 2: // Unreal Engine 3
+                col.xyz = pow(tonemap_unreal3(col.xyz), vec3(2.8));
+                break;
+            case 3: // Unreal Engine 4
+                col.xyz = aces_fitted(col.xyz);
+                break;
+            case 4: // Uncharted 2
+                col.xyz = uncharted2(col.xyz);
+                break;
+            case 5: // Gran Turismo
+                col.xyz = tonemap_uchimura(col.xyz);
+                break;
+            case 6: // Modified Gran Turismo
+                col.xyz = tonemap_uchimura2(col.xyz);
+                break;
+            case 7: // Rienhard
+                col.xyz = rienhard(col.xyz);
+                break;
+            case 8: // Modified Rienhard
+                col.xyz = rienhard2(col.xyz);
+                break;
+            case 9: // jt_tonemap
+                col.xyz = jt_toneMap(col.xyz);
+                break;
+            case 10: // robobo1221s
+                col.xyz = robobo1221sTonemap(col.xyz);
+                break;
+            case 11: // robo
+                col.xyz = roboTonemap(col.xyz);
+                break;
+            case 12: // jodieRobo
+                col.xyz = jodieRoboTonemap(col.xyz);
+                break;
+            case 13: // jodieRobo2
+                col.xyz = jodieRobo2ElectricBoogaloo(col.xyz);
+                break;
+            case 14: // jodieReinhard
+                col.xyz = jodieReinhardTonemap(col.xyz);
+                break;
+            case 15: // jodieReinhard2
+                col.xyz = jodieReinhard2ElectricBoogaloo(col.xyz);
+                break;
+        }   
+        // gamma correction
+        col.rgb = pow(col.rgb, vec3(1/gamma));
+
+        vec4 read = imageLoad(accum, ivec2(global_loc.xy));
+        imageStore(accum, ivec2(global_loc.xy), vec4(mix(read.rgb, col.rgb, 1./max(1.,read.a)), read.a+1.));
+
+        // imageStore(accum, ivec2(global_loc.xy), vec4(mix(read.rgb, vec3(gl_GlobalInvocationID.xy/255., read.a/255.), 1./max(0.1,read.a)), read.a+1.));
+        // imageStore(accum, ivec2(global_loc.xy), vec4(gl_GlobalInvocationID.xy/255., 0., 1.));
     }
-    // do a mix here, between col and the fog color, with the selected depth falloff term
-    col.rgb = mix(temp.rgb, fog_color.rgb, depth_term);
-
-    // color stuff happens here, because the imageStore will be quantizing to 8 bit
-    // tonemapping 
-    switch(tonemap_mode)
-    {
-        case 0: // None (Linear)
-            break;
-        case 1: // ACES (Narkowicz 2015)
-            col.xyz = cheapo_aces_approx(col.xyz);
-            break;
-        case 2: // Unreal Engine 3
-            col.xyz = pow(tonemap_unreal3(col.xyz), vec3(2.8));
-            break;
-        case 3: // Unreal Engine 4
-            col.xyz = aces_fitted(col.xyz);
-            break;
-        case 4: // Uncharted 2
-            col.xyz = uncharted2(col.xyz);
-            break;
-        case 5: // Gran Turismo
-            col.xyz = tonemap_uchimura(col.xyz);
-            break;
-        case 6: // Modified Gran Turismo
-            col.xyz = tonemap_uchimura2(col.xyz);
-            break;
-        case 7: // Rienhard
-            col.xyz = rienhard(col.xyz);
-            break;
-        case 8: // Modified Rienhard
-            col.xyz = rienhard2(col.xyz);
-            break;
-        case 9: // jt_tonemap
-            col.xyz = jt_toneMap(col.xyz);
-            break;
-        case 10: // robobo1221s
-            col.xyz = robobo1221sTonemap(col.xyz);
-            break;
-        case 11: // robo
-            col.xyz = roboTonemap(col.xyz);
-            break;
-        case 12: // jodieRobo
-            col.xyz = jodieRoboTonemap(col.xyz);
-            break;
-        case 13: // jodieRobo2
-            col.xyz = jodieRobo2ElectricBoogaloo(col.xyz);
-            break;
-        case 14: // jodieReinhard
-            col.xyz = jodieReinhardTonemap(col.xyz);
-            break;
-        case 15: // jodieReinhard2
-            col.xyz = jodieReinhard2ElectricBoogaloo(col.xyz);
-            break;
-    }   
-    // gamma correction
-    col.rgb = pow(col.rgb, vec3(1/gamma));
-
-    vec4 read = imageLoad(accum, ivec2(gl_GlobalInvocationID.xy));
-    imageStore(accum, ivec2(gl_GlobalInvocationID.xy), vec4(mix(read.rgb, col.rgb, 1./max(1.,read.a)), read.a+1.));
-    
-    // imageStore(current, ivec2(gl_GlobalInvocationID.xy), uvec4( col.r*255, col.g*255, col.b*255, col.a*255 ));
 }

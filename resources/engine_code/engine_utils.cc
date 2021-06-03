@@ -757,45 +757,52 @@ void engine::draw_everything() {
     // invoke the shader on the GPU
     // glDispatchCompute( WIDTH/8, HEIGHT/8, 1 ); //workgroup is 8x8x1, so divide each x and y by 8
 
-    struct offset{ int x; int y; };
+    struct offset{ int x; int y; bool touched;};
     static std::vector<offset> offsets;
     
     // construct list of offsets - previously this is the regular grid across the image
     static bool first_time = true;
     if(first_time){
+      first_time = false;
+
       for(int x = 0; x < WIDTH; x+=TILESIZE){
         for(int y = 0; y < WIDTH; y+=TILESIZE){
-          offset o; o.x = x; o.y = y;
+          offset o; o.x = x; o.y = y; o.touched = false;
           offsets.push_back(o);
         }
       }
-      first_time = false;
-    }else{ // sampling process
+      
       // std::shuffle the vector to get a new tile order
       std::random_device rd;
       std::mt19937 generator(rd());
       std::shuffle(offsets.begin(), offsets.end(), generator);
 
+    }else{ // sampling process
+
+      static long unsigned int offsets_offset = 0;
+      
       // process them off the shuffled vector, until a maximum of 16 milliseconds has passed, to maintain 60fps
       auto update_begin = std::chrono::high_resolution_clock::now();
-      for(offset o : offsets)
-      {
+      for(size_t i = 0; i < offsets.size(); i++){
         // stop condititions - millisecond count is over 16, or you're out of entries on the offsets vector
         if(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - update_begin).count() >= 16) break;
 
-        // keep sample count in the alpha channel, for mixing purposes
-        
-        // use o.x as the x offset
-        // use o.y as the y offset
+        // use o as the x and y offsets
+        glUniform1i(glGetUniformLocation(raymarch_shader, "x_offset"), offsets[offsets_offset%offsets.size()].x);
+        glUniform1i(glGetUniformLocation(raymarch_shader, "y_offset"), offsets[offsets_offset%offsets.size()].y);
+
+        if(offsets_offset++ > offsets.size()){
+          offsets_offset = 0;
+          std::random_device rd;
+          std::mt19937 generator(rd());
+          std::shuffle(offsets.begin(), offsets.end(), generator);
+        }
 
         // invoke the shader for this tile
         glDispatchCompute( TILESIZE / 32, TILESIZE / 32, 1 ); //workgroup is 8x8x1, so divide each x and y by 8
       }
     }
 
-
-
-    
     // sync to ensure the raymarched image is in the texture
     glMemoryBarrier( GL_SHADER_IMAGE_ACCESS_BARRIER_BIT );
   }
