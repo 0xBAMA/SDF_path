@@ -68,7 +68,7 @@ uniform int y_offset;
 ivec2 global_loc = ivec2(gl_GlobalInvocationID.xy) + ivec2(x_offset, y_offset);
 ivec2 dimensions = ivec2(imageSize(accum));
 vec2 fdimensions = vec2(dimensions);
-
+vec2 pixcoord = (vec2(global_loc.xy)-(fdimensions/2.)) / (fdimensions/2.);
 
 
 
@@ -1452,10 +1452,37 @@ float fractal_de165(vec3 p){
     return length(cross(p,normalize(vec3(1))))/s-5e-4;
 }
 
+// t is the blend parameter https://www.shadertoy.com/view/3lycWd
+float smin_blend(float a, float b, float k, float p, out float t){
+    float h = max(k - abs(a-b), 0.0)/k;
+    float m = 0.5 * pow(h, p);
+    t = (a < b) ? m : 1.0-m;
+    return min(a, b) - (m*k/p);
+}
 
-
+vec3 ambient_color;
 float de(vec3 p){
-    return smin_op(smin_op(fractal_de102(p+vec3(0.14, 0., -0.5)), fractal_de165(p), 0.1), fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.6,-2.5))*2.2, 0.01);
+    ambient_color = vec3(0);
+    float d102 = fractal_de102(p+vec3(0.14, 0., -0.5));
+    float d165 = fractal_de165(p);
+    float d51  = fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.6,-2.5))*2.2;
+
+    float t = 0.;
+    float d = smin_blend(d102, d165, 0.01, 1., t);
+
+// blending -
+    vec3 amb102 = vec3(0.03,0.07,0.02);
+    vec3 amb165 = vec3(0.1,0.12,0.14);
+    vec3 amb51  = vec3(0.11,0.06,0.18);
+
+    ambient_color = mix(amb102, amb165, t);
+
+    d = smin_blend(d, d51, 0.003, 1.0, t);
+
+    ambient_color = mix(ambient_color, amb51, t);
+    
+    return d;
+    // return smin_op(smin_op(fractal_de102(p+vec3(0.14, 0., -0.5)), fractal_de165(p), 0.1), fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.6,-2.5))*2.2, 0.01);
     // return fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.1,-2.5))*2.2;
 }
 
@@ -1529,28 +1556,6 @@ float soft_shadow( in vec3 ro, in vec3 rd, float mint, float maxt, float k /*hig
     return res*res*(3.0-2.0*res);
 }
 
-vec3 visibility_only_lighting(int lightnum, vec3 hitloc){
-    vec3 shadow_rd, lightpos, lightcol;
-    float mint, maxt, sharpness;
-
-    switch(lightnum){
-        case 1: lightpos = lightPos1; lightcol = lightCol1d; sharpness = shadow1; break;
-        case 2: lightpos = lightPos2; lightcol = lightCol2d; sharpness = shadow2; break;
-        case 3: lightpos = lightPos3; lightcol = lightCol3d; sharpness = shadow3; break;
-        default: break;
-    }
-
-    shadow_rd = normalize(lightpos-hitloc);
-
-    mint = EPSILON;
-    maxt = distance(hitloc, lightpos);
-
-    if(sharpness > 99)
-        return lightcol * sharp_shadow(hitloc, shadow_rd, mint, maxt);
-    else
-        return lightcol * soft_shadow(hitloc, shadow_rd, mint, maxt, sharpness);
-}
-
 vec3 phong_lighting(int lightnum, vec3 hitloc, vec3 norm, vec3 eye_pos){
 
 
@@ -1585,15 +1590,6 @@ vec3 phong_lighting(int lightnum, vec3 hitloc, vec3 norm, vec3 eye_pos){
 
     mint = EPSILON;
     maxt = distance(hitloc, lightpos);
-    
-    /*vec3 l = -normalize(hitloc - lightpos);
-    vec3 v = normalize(hitloc - eye_pos);
-    vec3 n = normalize(norm);
-    vec3 r = normalize(reflect(l, n));
-        
-    diffuse_component = occlusion_term * dattenuation_term * max(dot(n, l),0.) * lightcoldiff;
-    specular_component = (dot(n,l)>0) ? occlusion_term * dattenuation_term * pow(max(dot(r,v),0.),lightspecpow) * lightcolspec : vec3(0);
-    */
     
     vec3 l = normalize(lightpos - hitloc);
     vec3 v = normalize(eye_pos - hitloc);
@@ -1640,10 +1636,9 @@ void main()
 
     // imageStore(current, ivec2(gl_GlobalInvocationID.xy), uvec4( 120, 45, 12, 255 ));
 
-    if(global_loc.x < dimensions.x && global_loc.y < dimensions.y)  // we are good to check the ray against the AABB
-    { 
+    // are we good to check the ray against the scene representation
+    if(global_loc.x < dimensions.x && global_loc.y < dimensions.y){ 
         vec4 col = vec4(0, 0, 0, 1);
-        vec2 pixcoord = (vec2(global_loc.xy)-(fdimensions/2.)) / (fdimensions/2.);
         vec3 ro = ray_origin;
 
         float aspect_ratio = float(dimensions.x) / float(dimensions.y);
@@ -1652,8 +1647,6 @@ void main()
         escape = 0.;
         float dresult = raymarch(ro, rd);
         float escape_result = escape;
-
-        vec3 lightpos = vec3(2*sin(time), 2., 2*cos(time));
 
         vec3 hitpos = ro+dresult*rd;
         vec3 normal = norm(hitpos);
@@ -1664,10 +1657,12 @@ void main()
         vec3 sresult2 = phong_lighting(2, hitpos, normal, shadow_ro) * flickerfactor2;
         vec3 sresult3 = phong_lighting(3, hitpos, normal, shadow_ro) * flickerfactor3;
 
-        vec3 palatte_read = 0.4 * basic_diffuse * pal( escape_result, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20) );
+        // vec3 palatte_read = 0.4 * basic_diffuse * pal( escape_result, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20) );
         
         // apply lighting
-        col.xyz = palatte_read * (sresult1 + sresult2  + sresult3);
+        // col.xyz = palatte_read * (sresult1 + sresult2  + sresult3);
+        // col.xyz = (ambient_color + basic_diffuse) * (sresult1 + sresult2  + sresult3);
+        col.xyz = 0.2 * ambient_color * (sresult1 + sresult2  + sresult3);
 
         // compute the depth scale term
         float depth_term = dresult * depth_scale; 

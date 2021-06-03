@@ -356,7 +356,7 @@ void engine::gl_setup() {
     glGenTextures(1, &accumulator_texture);
     glActiveTexture(GL_TEXTURE0+1);
     glBindTexture(GL_TEXTURE_RECTANGLE, accumulator_texture);
-    glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA32F, WIDTH, HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, &image_data[0]);
+    glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA32F, WIDTH, HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
     glBindImageTexture(1, accumulator_texture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
   }
 
@@ -538,8 +538,17 @@ void engine::control_window()
     ImGui::Text("");
     ImGui::Text("");
 
-
-    
+    ImGui::Text("%d samples", sample_counter);
+    if(ImGui::SmallButton(" Reset ")){
+      sample_counter = 0;
+      std::vector<uint8_t> data;
+      data.resize(WIDTH*HEIGHT*4);
+      
+      glBindTexture(GL_TEXTURE_RECTANGLE, accumulator_texture);
+      glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA32F, WIDTH, HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, &data[0]);
+      // glClearTexImage(accumulator_texture, 0, GL_RGBA32F, GL_FLOAT, 0);
+      glMemoryBarrier( GL_SHADER_IMAGE_ACCESS_BARRIER_BIT );
+    }
     ImGui::EndTabItem();
   }
 
@@ -796,6 +805,7 @@ void engine::draw_everything() {
           std::random_device rd;
           std::mt19937 generator(rd());
           std::shuffle(offsets.begin(), offsets.end(), generator);
+          sample_counter++;
         }
 
         // invoke the shader for this tile

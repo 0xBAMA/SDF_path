@@ -131,6 +131,8 @@ private:
 	float depth_scale = 1.;
 	int depth_selector = 8;	
 
+	int sample_counter = 0;
+
 	float fov = 1.;
 
 	// position
