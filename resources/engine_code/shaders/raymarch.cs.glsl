@@ -1,5 +1,5 @@
 #version 430 core
-layout( local_size_x = 8, local_size_y = 8, local_size_z = 1 ) in;
+layout( local_size_x = 32, local_size_y = 32, local_size_z = 1 ) in;
 
 // render texture, this is written to by this shader
 layout( binding = 0, rgba8ui ) uniform uimage2D current;
@@ -60,6 +60,9 @@ uniform float depth_scale;
 uniform int depth_falloff;
 
 
+// because this is going to have to be tile-based, we need this local offset
+uniform int x_offset;
+uniform int y_offset;
 
 
 // tonemapping stuff
@@ -1626,63 +1629,57 @@ void main()
 {
 
     // imageStore(current, ivec2(gl_GlobalInvocationID.xy), uvec4( 120, 45, 12, 255 ));
+    ivec2 global_loc = ivec2(gl_GlobalInvocationID.xy) + ivec2(x_offset, y_offset);
+    ivec2 dimensions = ivec2(imageSize(accum));
 
+    
     vec4 col = vec4(0, 0, 0, 1);
     float dresult_avg = 0.;
 
-    for(int x = 0; x < AA; x++)
-    for(int y = 0; y < AA; y++)
+    vec2 pixcoord = (vec2(global_loc.xy)-vec2(dimensions)/2.) / (vec2(dimensions)/2.);
+    vec3 ro = ray_origin;
+
+    float aspect_ratio;
+    // aspect_ratio = 1.618;
+    aspect_ratio = float(imageSize(current).x) / float(imageSize(current).y);
+    vec3 rd = normalize(aspect_ratio*pixcoord.x*basis_x + pixcoord.y*basis_y + (1./fov)*basis_z);
+
+    escape = 0.;
+    float dresult = raymarch(ro, rd);
+    float escape_result = escape;
+
+    vec3 lightpos = vec3(2*sin(time), 2., 2*cos(time));
+
+    vec3 hitpos = ro+dresult*rd;
+    vec3 normal = norm(hitpos);
+
+    vec3 shadow_ro = hitpos+normal*EPSILON;
+
+    vec3 sresult1 = vec3(0.);
+    vec3 sresult2 = vec3(0.);
+    vec3 sresult3 = vec3(0.);
+        
+    sresult1 = phong_lighting(1, hitpos, normal, shadow_ro) * flickerfactor1;
+    sresult2 = phong_lighting(2, hitpos, normal, shadow_ro) * flickerfactor2;
+    sresult3 = phong_lighting(3, hitpos, normal, shadow_ro) * flickerfactor3;
+    // sresult1 = phong_lighting(1, hitpos, normal, ro) * flickerfactor1;
+    // sresult2 = phong_lighting(2, hitpos, normal, ro) * flickerfactor2;
+    // sresult3 = phong_lighting(3, hitpos, normal, ro) * flickerfactor3;
+        
+    // vec3 temp = ((norm(hitpos)/2.)+vec3(0.5)); // visualizing normal vector
+        
+    vec3 palatte_read = 0.4 * basic_diffuse * pal( escape_result, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20) );
+        
+    // apply lighting
+    vec3 temp = palatte_read * (sresult1 + sresult2  + sresult3);
+
+    temp *= ((1./AO_scale) * calcAO(shadow_ro, normal)); // ambient occlusion calculation
+
+    // compute the depth scale term
+    float depth_term = dresult * depth_scale; 
+
+    switch(depth_falloff)
     {
-        vec2 offset = vec2(float(x), float(y)) / float(AA) - 0.5;
-
-        vec2 pixcoord = (vec2(gl_GlobalInvocationID.xy + offset)-vec2(imageSize(current)/2.)) / vec2(imageSize(current)/2.);
-        vec3 ro = ray_origin;
-
-        float aspect_ratio;
-        // aspect_ratio = 1.618;
-        aspect_ratio = float(imageSize(current).x) / float(imageSize(current).y);
-        vec3 rd = normalize(aspect_ratio*pixcoord.x*basis_x + pixcoord.y*basis_y + (1./fov)*basis_z);
-
-        escape = 0.;
-        float dresult = raymarch(ro, rd);
-        float escape_result = escape;
-
-        // vec3 lightpos = vec3(8.); pR(lightpos.xz, time);
-        vec3 lightpos = vec3(2*sin(time), 2., 2*cos(time));
-
-        vec3 hitpos = ro+dresult*rd;
-        vec3 normal = norm(hitpos);
-
-        vec3 shadow_ro = hitpos+normal*EPSILON;
-
-        vec3 sresult1 = vec3(0.);
-        vec3 sresult2 = vec3(0.);
-        vec3 sresult3 = vec3(0.);
-        
-        sresult1 = phong_lighting(1, hitpos, normal, shadow_ro) * flickerfactor1;
-        sresult2 = phong_lighting(2, hitpos, normal, shadow_ro) * flickerfactor2;
-        sresult3 = phong_lighting(3, hitpos, normal, shadow_ro) * flickerfactor3;
-        // sresult1 = phong_lighting(1, hitpos, normal, ro) * flickerfactor1;
-        // sresult2 = phong_lighting(2, hitpos, normal, ro) * flickerfactor2;
-        // sresult3 = phong_lighting(3, hitpos, normal, ro) * flickerfactor3;
-        
-        // vec3 temp = ((norm(hitpos)/2.)+vec3(0.5)); // visualizing normal vector
-        
-        vec3 palatte_read = 0.4 * basic_diffuse * pal( escape_result, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20) );
-        
-        // apply lighting
-        // vec3 temp = basic_diffuse + sresult1 + sresult2  + sresult3;
-        // vec3 temp = palatte_read + sresult1 + sresult2  + sresult3;
-        vec3 temp = palatte_read * (sresult1 + sresult2  + sresult3);
-
-
-        temp *= ((1./AO_scale) * calcAO(shadow_ro, normal)); // ambient occlusion calculation
-
-        // do the depth scaling here
-        // compute the depth scale term
-        float depth_term = depth_scale * dresult;
-        switch(depth_falloff)
-        {
             case 0: depth_term = 0.;
             case 1: depth_term = 2.-2.*(1./(1.-depth_term)); break;
             case 2: depth_term = 1.-(1./(1+0.1*depth_term*depth_term)); break;
@@ -1696,41 +1693,11 @@ void main()
             case 8: depth_term = (sqrt(depth_term)/8.) * depth_term; break;
             case 9: depth_term = sqrt(depth_term/9.); break;
             case 10: depth_term = pow(depth_term/10., 2.); break;
+            case 11: depth_term = dresult_avg/MAX_DIST;
             default: break;
-        }
-        // do a mix here, between col and the fog color, with the selected depth falloff term
-        temp.rgb = mix(temp.rgb, fog_color.rgb, depth_term);
-        
-        col.rgb += temp;
-    }
-
-    col.rgb /= float(AA*AA);
-    dresult_avg /= float(AA*AA);
-
-    dresult_avg *= depth_scale;
-
-    // compute the depth scale term
-    float depth_term; 
-
-    switch(depth_falloff)
-    {
-        case 0: depth_term = 2.-2.*(1./(1.-dresult_avg)); break;
-        case 1: depth_term = 1.-(1./(1+0.1*dresult_avg*dresult_avg)); break;
-        case 2: depth_term = (1-pow(dresult_avg/30., 1.618)); break;
-
-        case 3: depth_term = clamp(exp(0.25*dresult_avg-3.), 0., 10.); break;
-        case 4: depth_term = exp(0.25*dresult_avg-3.); break;
-        case 5: depth_term = exp( -0.002 * dresult_avg * dresult_avg * dresult_avg ); break;
-        case 6: depth_term = exp(-0.6*max(dresult_avg-3., 0.0)); break;
-    
-        case 7: depth_term = (sqrt(dresult_avg)/8.) * dresult_avg; break;
-        case 8: depth_term = sqrt(dresult_avg/9.); break;
-        case 9: depth_term = pow(dresult_avg/10., 2.); break;
-        case 10: depth_term = dresult_avg/MAX_DIST;
-        default: break;
     }
     // do a mix here, between col and the fog color, with the selected depth falloff term
-    col.rgb = mix(col.rgb, fog_color.rgb, depth_term);
+    col.rgb = mix(temp.rgb, fog_color.rgb, depth_term);
 
     // color stuff happens here, because the imageStore will be quantizing to 8 bit
     // tonemapping 
