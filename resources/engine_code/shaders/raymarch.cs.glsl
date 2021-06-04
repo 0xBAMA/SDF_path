@@ -1465,36 +1465,60 @@ float smin_blend(float a, float b, float k, float p, out float t){
     return min(a, b) - (m*k/p);
 }
 
-vec3 ambient_color;
+vec3 albedo;
 vec3 current_emission;
 
+#define fold45(p)(p.y>p.x)?p.yx:p
+float fde(vec3 p) {
+  float scale = 2.1, off0 = .8, off1 = .3, off2 = .83;
+  vec3 off =vec3(2.,.2,.1);
+  float s=1.0;
+  for(int i = 0;++i<20;) { 
+    p.xy = abs(p.xy);
+    p.xy = fold45(p.xy);
+    p.y -= off0;
+    p.y = -abs(p.y);
+    p.y += off0;
+    p.x += off1;
+    p.xz = fold45(p.xz);
+    p.x -= off2;
+    p.xz = fold45(p.xz);
+    p.x += off1;
+    p -= off;
+    p *= scale;
+    p += off;
+    s *= scale;
+  }
+  return length(p)/s;
+}
+
+
 float de(vec3 p){
-    ambient_color = vec3(0);
+    albedo = vec3(0);
     current_emission = vec3(0);
     float d102 = fractal_de102(p+vec3(0.14, 0., -0.5));
     float d165 = fractal_de165(p);
     float d51  = fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.6,-2.5))*2.2;
 
     float t = 0.;
-    // float d = smin_blend(d102, d165, 0.01, 1., t);
-    float d = d102;
+    float d = smin_blend(d102, d165, 0.01, 1., t);
+    d = min(d,fde(p*20)/20);
 
 // blending -
-    vec3 amb102 = vec3(0.61,0.5,0.02);
+    albedo = vec3(1.61,1.5,0.9);
     vec3 amb165 = vec3(0.2,0.2,0.54);
     vec3 amb51  = vec3(22.11,18.6,10.18);
 
-    ambient_color = mix(amb102, amb165, t);
 
     d = smin_blend(d, d51, 0.003, 1.0, t);
 
-    ambient_color = mix(ambient_color, amb51, t);
+    albedo = mix(albedo, amb51, t);
     current_emission = mix(vec3(0), amb51, t);
 
-    float dsphere = distance(p, vec3(-1.5,-.2,-0.5))-0.04;
+    float dbox = fBox(p - vec3(-0.2,.1,0.2), vec3(0.1, 1., 0.01));
 
-    d = smin_blend(d, dsphere, 0.1, 1.0, t);
-    current_emission = mix(current_emission, 10*vec3(19.1, 12.2, 1.0), t);
+    d = min(d, dbox);
+    if(d == dbox) current_emission = vec3(19.1, 17.2, 2.4);
     
     return d;
     // return smin_op(smin_op(fractal_de102(p+vec3(0.14, 0., -0.5)), fractal_de165(p), 0.1), fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.6,-2.5))*2.2, 0.01);
@@ -1614,7 +1638,7 @@ vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
         float escape_result = escape;
 
         if(dresult >= MAX_DIST){
-            final_color += sky_color;
+            final_color += throughput*sky_color;
             break;
         }
         
@@ -1624,15 +1648,14 @@ vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
 
         
         rd = normalize((1.+EPSILON)*normal+RandomUnitVector());
-        // vec3 current_emission = vec3(ambient_color);
 
         
-        final_color += throughput*current_emission;
-        // throughput *= (ambient_color/3.14159)*dot(rd,normal);
-        throughput *= ambient_color;
+        final_color += throughput*current_emission*(1/pow(dresult, 2.));
+        // throughput *= (albedo/3.14159)*dot(rd,normal);
+        throughput *= albedo;
 
 
-        if(length(current_emission) > 0.5) break;
+        if(length(current_emission) > 0.5) break; // if you hit a light, escape
     }  
     
 
@@ -1643,6 +1666,81 @@ vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
     // return vec3(dresult * depth_scale / MAX_DIST);
 }
    
+float sharp_shadow( in vec3 ro, in vec3 rd, float mint, float maxt ){
+    for( float t=mint; t<maxt; )    {
+        float h = de(ro + rd*t);
+        if( h<0.001 )
+            return 0.0;
+        t += h;
+    }
+    return 1.0;
+}
+
+vec3 phong_lighting(int lightnum, vec3 hitloc, vec3 norm, vec3 eye_pos){
+
+    vec3 shadow_rd, lightpos, lightcoldiff, lightcolspec;
+    float mint, maxt, lightspecpow, sharpness;
+
+    switch(lightnum){ // eventually handle these as uniform vector inputs, to handle more than three
+        case 1:
+            lightpos     = eye_pos + lightPos1 * (basis_x + basis_y + basis_z);
+            lightcoldiff = lightCol1d;
+            lightcolspec = lightCol1s;
+            lightspecpow = specpower1;
+            break;
+        case 2:
+            lightpos     = eye_pos + lightPos2 * (basis_x + basis_y + basis_z);
+            lightcoldiff = lightCol2d;
+            lightcolspec = lightCol2s;
+            lightspecpow = specpower2;
+            break;
+        case 3:
+            lightpos     = eye_pos + lightPos3 * (basis_x + basis_y + basis_z);
+            lightcoldiff = lightCol3d;
+            lightcolspec = lightCol3s;
+            lightspecpow = specpower3;
+            break;
+        default:
+            break;
+    }
+
+    mint = EPSILON;
+    maxt = distance(hitloc, lightpos);
+    
+    vec3 l = normalize(lightpos - hitloc);
+    vec3 v = normalize(eye_pos - hitloc);
+    vec3 h = normalize(l+v);
+    vec3 n = normalize(norm);
+    
+    // then continue with the phong calculation
+    vec3 diffuse_component, specular_component;
+    
+    // check occlusion with the soft/sharp shadow
+    float occlusion_term = sharp_shadow(hitloc, l, mint, maxt);
+
+    float dattenuation_term = 1./pow(distance(hitloc, lightpos), 1.1);
+    
+    diffuse_component = occlusion_term * dattenuation_term * max(dot(n, l), 0.) * lightcoldiff;
+    specular_component = (dot(n,l) > 0) ? occlusion_term * dattenuation_term * ((lightspecpow+2)/(2*M_PI)) * pow(max(dot(n,h),0.),lightspecpow) * lightcolspec : vec3(0);
+
+    return diffuse_component + specular_component;
+}
+
+
+float calcAO( in vec3 pos, in vec3 nor )
+{
+    float occ = 0.0;
+    float sca = 1.0;
+    for( int i=0; i<5; i++ )
+    {
+        float h = 0.001 + 0.15*float(i)/4.0;
+        float d = de( pos + h*nor );
+        occ += (h-d)*sca;
+        sca *= 0.95;
+    }
+    return clamp( 1.0 - 1.5*occ, 0.0, 1.0 );
+}
+
 
 
 void main()
@@ -1658,7 +1756,49 @@ void main()
     
         // color the ray
         col.rgb = get_color_for_ray(ro, rd);
+        float dresult = raymarch(ro, rd);
 
+        vec3 hitpos = ro+dresult*rd;
+        vec3 normal = norm(hitpos);
+
+        vec3 shadow_ro = hitpos+normal*EPSILON*2.;
+
+        vec3 sresult1 = vec3(0.);
+        vec3 sresult2 = vec3(0.);
+        vec3 sresult3 = vec3(0.);
+        
+        sresult1 = phong_lighting(1, hitpos, normal, shadow_ro) * flickerfactor1;
+        sresult2 = phong_lighting(2, hitpos, normal, shadow_ro) * flickerfactor2;
+        sresult3 = phong_lighting(3, hitpos, normal, shadow_ro) * flickerfactor3;
+        
+        col.rgb += basic_diffuse * (sresult1 + sresult2 + sresult3);
+        
+        col.rgb *= ((1./AO_scale) * calcAO(shadow_ro, normal)); // ambient occlusion calculation
+        
+
+       // compute the depth scale term
+        float depth_term = dresult * depth_scale; 
+        switch(depth_falloff)
+        {
+            case 0: depth_term = 0.;
+            case 1: depth_term = 2.-2.*(1./(1.-depth_term)); break;
+            case 2: depth_term = 1.-(1./(1+0.1*depth_term*depth_term)); break;
+            case 3: depth_term = (1-pow(depth_term/30., 1.618)); break;
+
+            case 4: depth_term = clamp(exp(0.25*depth_term-3.), 0., 10.); break;
+            case 5: depth_term = exp(0.25*depth_term-3.); break;
+            case 6: depth_term = exp( -0.002 * depth_term * depth_term * depth_term ); break;
+            case 7: depth_term = exp(-0.6*max(depth_term-3., 0.0)); break;
+    
+            case 8: depth_term = (sqrt(depth_term)/8.) * depth_term; break;
+            case 9: depth_term = sqrt(depth_term/9.); break;
+            case 10: depth_term = pow(depth_term/10., 2.); break;
+            case 11: depth_term = dresult/MAX_DIST;
+            default: break;
+        }
+        // do a mix here, between col and the fog color, with the selected depth falloff term
+        col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
+        
         // tonemapping 
         switch(tonemap_mode)
         {
@@ -1715,6 +1855,6 @@ void main()
         col.rgb = pow(col.rgb, vec3(1/gamma));
 
         vec4 read = imageLoad(accum, ivec2(global_loc.xy));
-        imageStore(accum, ivec2(global_loc.xy), vec4(mix(read.rgb, col.rgb, 1./max(1.,read.a)), read.a+1.));
+        imageStore(accum, ivec2(global_loc.xy), vec4(mix(read.rgb, col.rgb, 1./max(1., read.a)), read.a+1.));
     }
 }
