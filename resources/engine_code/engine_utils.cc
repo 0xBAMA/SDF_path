@@ -703,7 +703,7 @@ void engine::draw_everything() {
     glUniform3f(glGetUniformLocation(raymarch_shader, "basic_diffuse"), basic_diffuse.x, basic_diffuse.y, basic_diffuse.z);
 
     // fog color
-    glUniform3f(glGetUniformLocation(raymarch_shader, "fog_color"), clear_color.x, clear_color.y, clear_color.z);
+    glUniform3f(glGetUniformLocation(raymarch_shader, "sky_color"), clear_color.x, clear_color.y, clear_color.z);
 
     // tonemapping mode
     glUniform1i(glGetUniformLocation(raymarch_shader, "tonemap_mode"), current_tmode);
@@ -807,6 +807,8 @@ void engine::draw_everything() {
           std::shuffle(offsets.begin(), offsets.end(), generator);
           sample_counter++;
         }
+
+        // SDL_Delay(10);
 
         // invoke the shader for this tile
         glDispatchCompute( TILESIZE / 32, TILESIZE / 32, 1 ); //workgroup is 8x8x1, so divide each x and y by 8

@@ -82,11 +82,11 @@ constexpr double pi = 3.14159265358979323846;
 #include "../nlohmann_JSON/json.hpp"
 using json = nlohmann::json;
 
-// #define WIDTH 720
-// #define HEIGHT 480
+#define WIDTH 768
+#define HEIGHT 480
 
-#define WIDTH 3000
-#define HEIGHT 2000
+// #define WIDTH 3000
+// #define HEIGHT 2000
 
 #define TILESIZE 64
 

@@ -11,10 +11,13 @@ layout( binding = 1, rgba32f ) uniform image2D accum;
 #define MAX_DIST  100.
 #define EPSILON   0.002 // closest surface distance
 
+#define MAX_BOUNCES 5
+#define NUM_SAMPLES 2
+
 #define AA 2
 
 uniform vec3 basic_diffuse;
-uniform vec3 fog_color;
+uniform vec3 sky_color;
 
 uniform int tonemap_mode;
 uniform float gamma;
@@ -1402,6 +1405,8 @@ float fOpTongue(float a, float b, float ra, float rb) {
 //  ║╣ │││ ││  ╠═╣║ ╦    ╚═╗ ║║╠╣   ║  │ │ ││├┤
 //  ╚═╝┘└┘─┴┘  ╩ ╩╚═╝────╚═╝═╩╝╚    ╚═╝└─┘─┴┘└─┘
 
+
+
 float escape = 0.;
 
 vec3 pal( in float t, in vec3 a, in vec3 b, in vec3 c, in vec3 d )
@@ -1461,31 +1466,40 @@ float smin_blend(float a, float b, float k, float p, out float t){
 }
 
 vec3 ambient_color;
+vec3 current_emission;
+
 float de(vec3 p){
     ambient_color = vec3(0);
+    current_emission = vec3(0);
     float d102 = fractal_de102(p+vec3(0.14, 0., -0.5));
     float d165 = fractal_de165(p);
     float d51  = fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.6,-2.5))*2.2;
 
     float t = 0.;
-    float d = smin_blend(d102, d165, 0.01, 1., t);
+    // float d = smin_blend(d102, d165, 0.01, 1., t);
+    float d = d102;
 
 // blending -
-    vec3 amb102 = vec3(0.03,0.07,0.02);
-    vec3 amb165 = vec3(0.1,0.12,0.14);
-    vec3 amb51  = vec3(0.11,0.06,0.18);
+    vec3 amb102 = vec3(0.61,0.5,0.02);
+    vec3 amb165 = vec3(0.2,0.2,0.54);
+    vec3 amb51  = vec3(22.11,18.6,10.18);
 
     ambient_color = mix(amb102, amb165, t);
 
     d = smin_blend(d, d51, 0.003, 1.0, t);
 
     ambient_color = mix(ambient_color, amb51, t);
+    current_emission = mix(vec3(0), amb51, t);
+
+    float dsphere = distance(p, vec3(-1.5,-.2,-0.5))-0.04;
+
+    d = smin_blend(d, dsphere, 0.1, 1.0, t);
+    current_emission = mix(current_emission, 10*vec3(19.1, 12.2, 1.0), t);
     
     return d;
     // return smin_op(smin_op(fractal_de102(p+vec3(0.14, 0., -0.5)), fractal_de165(p), 0.1), fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.6,-2.5))*2.2, 0.01);
     // return fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.1,-2.5))*2.2;
 }
-
 
 //  ╦═╗┌─┐┌┐┌┌┬┐┌─┐┬─┐┬┌┐┌┌─┐  ╔═╗┌─┐┌┬┐┌─┐
 //  ╠╦╝├┤ │││ ││├┤ ├┬┘│││││ ┬  ║  │ │ ││├┤ 
@@ -1494,6 +1508,7 @@ float de(vec3 p){
 uint num_steps = 0; // how many steps taken by the raymarch function
 float dmin = 1e10; // minimum distance initially large
 
+// raymarches to the next hit
 float raymarch(vec3 ro, vec3 rd) {
     float d0 = 0.0, d1 = 0.0;
     for(int i = 0; i < MAX_STEPS; i++) {
@@ -1506,7 +1521,7 @@ float raymarch(vec3 ro, vec3 rd) {
 }
 
 vec3 norm(vec3 p) { // to get the normal vector for a point in space, this function evaluates the gradient of the distance function
-#define METHOD 2
+#define METHOD 1
 #if METHOD == 0 
     // tetrahedron version, unknown source - 4 evaluations
     vec2 e = vec2(1,-1) * EPSILON;
@@ -1527,167 +1542,123 @@ vec3 norm(vec3 p) { // to get the normal vector for a point in space, this funct
 #endif
 }
 
-float sharp_shadow( in vec3 ro, in vec3 rd, float mint, float maxt ){
-    for( float t=mint; t<maxt; )    {
-        float h = de(ro + rd*t);
-        if( h<0.001 )
-            return 0.0;
-        t += h;
-    }
-    return 1.0;
-}
-
-float soft_shadow( in vec3 ro, in vec3 rd, float mint, float maxt, float k /*higher is sharper*/ ){
-    float res = 1.0;
-    float ph = 1e20;
-    for( float t=mint; t<maxt; )
-    {
-        float h = de(ro + rd*t);
-        if( h<EPSILON )
-            return 0.0;
-        float y = h*h/(2.0*ph);
-        float d = sqrt(h*h-y*y);
-        res = min( res, k*d/max(0.0,t-y) );
-        ph = h;
-        t += h;
-    }
-    // return res;
-    res = clamp( res, 0.0, 1.0 );
-    return res*res*(3.0-2.0*res);
-}
-
-vec3 phong_lighting(int lightnum, vec3 hitloc, vec3 norm, vec3 eye_pos){
 
 
-    vec3 shadow_rd, lightpos, lightcoldiff, lightcolspec;
-    float mint, maxt, lightspecpow, sharpness;
-
-    switch(lightnum){ // eventually handle these as uniform vector inputs, to handle more than three
-        case 1:
-            lightpos     = eye_pos + lightPos1 * (basis_x + basis_y + basis_z);
-            lightcoldiff = lightCol1d;
-            lightcolspec = lightCol1s;
-            lightspecpow = specpower1;
-            sharpness    = shadow1;
-            break;
-        case 2:
-            lightpos     = eye_pos + lightPos2 * (basis_x + basis_y + basis_z);
-            lightcoldiff = lightCol2d;
-            lightcolspec = lightCol2s;
-            lightspecpow = specpower2;
-            sharpness    = shadow2;
-            break;
-        case 3:
-            lightpos     = eye_pos + lightPos3 * (basis_x + basis_y + basis_z);
-            lightcoldiff = lightCol3d;
-            lightcolspec = lightCol3s;
-            lightspecpow = specpower3;
-            sharpness    = shadow3;
-            break;
-        default:
-            break;
-    }
-
-    mint = EPSILON;
-    maxt = distance(hitloc, lightpos);
-    
-    vec3 l = normalize(lightpos - hitloc);
-    vec3 v = normalize(eye_pos - hitloc);
-    vec3 h = normalize(l+v);
-    vec3 n = normalize(norm);
-    
-    // then continue with the phong calculation
-    vec3 diffuse_component, specular_component;
-    
-    // check occlusion with the soft/sharp shadow
-    float occlusion_term;
-    
-    if(sharpness > 99)
-        occlusion_term = sharp_shadow(hitloc, l, mint, maxt);
-    else
-        occlusion_term = soft_shadow(hitloc, l, mint, maxt, sharpness);
-
-    float dattenuation_term = 1./pow(distance(hitloc, lightpos), 1.1);
-    
-    diffuse_component = occlusion_term * dattenuation_term * max(dot(n, l), 0.) * lightcoldiff;
-    specular_component = (dot(n,l) > 0) ? occlusion_term * dattenuation_term * ((lightspecpow+2)/(2*M_PI)) * pow(max(dot(n,h),0.),lightspecpow) * lightcolspec : vec3(0);
-
-    return diffuse_component + specular_component;
-}
 
 
-float calcAO( in vec3 pos, in vec3 nor )
+// hash function
+
+// http://www.jcgt.org/published/0009/03/02/
+uvec4 pcg4d(vec2 s)
 {
-    float occ = 0.0;
-    float sca = 1.0;
-    for( int i=0; i<5; i++ )
-    {
-        float h = 0.001 + 0.15*float(i)/4.0;
-        float d = de( pos + h*nor );
-        occ += (h-d)*sca;
-        sca *= 0.95;
-    }
-    return clamp( 1.0 - 1.5*occ, 0.0, 1.0 );
+    uvec4 v = uvec4(s, uint(s.x) ^ uint(s.y), uint(s.x) + uint(s.y));
+
+    v = v * 1664525u + 1013904223u;
+    
+    v.x += v.y*v.w;
+    v.y += v.z*v.x;
+    v.z += v.x*v.y;
+    v.w += v.y*v.z;
+    
+    v ^= v >> 16u;
+    
+    v.x += v.y*v.w;
+    v.y += v.z*v.x;
+    v.z += v.x*v.y;
+    v.w += v.y*v.z;
+    
+    return v;
 }
 
 
-void main()
+// from demofox
+// https://blog.demofox.org/2020/05/25/casual-shadertoy-path-tracing-1-basic-camera-diffuse-emissive/
+uint seed = uint(uint(global_loc.x) * uint(1973) + uint(global_loc.y) * uint(9277) + uint(time) * uint(26699)) | uint(1);;
+uint wang_hash(){
+    seed = uint(seed ^ uint(61)) ^ uint(seed >> uint(16));
+    seed *= uint(9);
+    seed = seed ^ (seed >> 4);
+    seed *= uint(0x27d4eb2d);
+    seed = seed ^ (seed >> 15);
+    return seed;
+}
+float RandomFloat01(){
+    return float(wang_hash()) / 4294967296.0;
+}
+vec3 RandomUnitVector()
 {
+    float z = RandomFloat01() * 2.0f - 1.0f;
+    float a = RandomFloat01() * 2. * M_PI;
+    float r = sqrt(1.0f - z * z);
+    float x = r * cos(a);
+    float y = r * sin(a);
+    return vec3(x, y, z);
+}
 
-    // imageStore(current, ivec2(gl_GlobalInvocationID.xy), uvec4( 120, 45, 12, 255 ));
-
-    // are we good to check the ray against the scene representation
-    if(global_loc.x < dimensions.x && global_loc.y < dimensions.y){ 
-        vec4 col = vec4(0, 0, 0, 1);
-        vec3 ro = ray_origin;
-
-        float aspect_ratio = float(dimensions.x) / float(dimensions.y);
-        vec3 rd = normalize(aspect_ratio*pixcoord.x*basis_x + pixcoord.y*basis_y + (1./fov)*basis_z);
+vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
+    escape = 0.;
+    vec3 ro = ro_in, rd = rd_in;
     
+    // float dresult = raymarch(ro, rd);
+    // float escape_result = escape;
+
+
+    // so first hit location is known in hitpos, and surface normal at that point in the normal
+
+    
+    vec3 final_color = vec3(0.);
+    vec3 throughput = vec3(1.);
+    for(int i = 0; i < MAX_BOUNCES; i++){
         escape = 0.;
         float dresult = raymarch(ro, rd);
         float escape_result = escape;
 
-        vec3 hitpos = ro+dresult*rd;
-        vec3 normal = norm(hitpos);
-
-        vec3 shadow_ro = hitpos+normal*EPSILON;
-
-        vec3 sresult1 = phong_lighting(1, hitpos, normal, shadow_ro) * flickerfactor1;
-        vec3 sresult2 = phong_lighting(2, hitpos, normal, shadow_ro) * flickerfactor2;
-        vec3 sresult3 = phong_lighting(3, hitpos, normal, shadow_ro) * flickerfactor3;
-
-        // vec3 palatte_read = 0.4 * basic_diffuse * pal( escape_result, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20) );
-        
-        // apply lighting
-        // col.xyz = palatte_read * (sresult1 + sresult2  + sresult3);
-        // col.xyz = (ambient_color + basic_diffuse) * (sresult1 + sresult2  + sresult3);
-        col.xyz = 0.2 * ambient_color * (sresult1 + sresult2  + sresult3);
-
-        // compute the depth scale term
-        float depth_term = dresult * depth_scale; 
-        switch(depth_falloff)
-        {
-            case 0: depth_term = 0.;
-            case 1: depth_term = 2.-2.*(1./(1.-depth_term)); break;
-            case 2: depth_term = 1.-(1./(1+0.1*depth_term*depth_term)); break;
-            case 3: depth_term = (1-pow(depth_term/30., 1.618)); break;
-
-            case 4: depth_term = clamp(exp(0.25*depth_term-3.), 0., 10.); break;
-            case 5: depth_term = exp(0.25*depth_term-3.); break;
-            case 6: depth_term = exp( -0.002 * depth_term * depth_term * depth_term ); break;
-            case 7: depth_term = exp(-0.6*max(depth_term-3., 0.0)); break;
-    
-            case 8: depth_term = (sqrt(depth_term)/8.) * depth_term; break;
-            case 9: depth_term = sqrt(depth_term/9.); break;
-            case 10: depth_term = pow(depth_term/10., 2.); break;
-            case 11: depth_term = dresult/MAX_DIST;
-            default: break;
+        if(dresult >= MAX_DIST){
+            final_color += sky_color;
+            break;
         }
-        // do a mix here, between col and the fog color, with the selected depth falloff term
-        col.rgb = mix(col.rgb, fog_color.rgb, depth_term);
+        
+        ro = ro+dresult*rd;
+        vec3 normal = norm(ro);
+        ro += EPSILON * normal;
 
-        // color stuff happens here, because the imageStore will be quantizing to 8 bit
+        
+        rd = normalize((1.+EPSILON)*normal+RandomUnitVector());
+        // vec3 current_emission = vec3(ambient_color);
+
+        
+        final_color += throughput*current_emission;
+        // throughput *= (ambient_color/3.14159)*dot(rd,normal);
+        throughput *= ambient_color;
+
+
+        if(length(current_emission) > 0.5) break;
+    }  
+    
+
+    return final_color;
+
+
+    // return RandomUnitVector().xyz;
+    // return vec3(dresult * depth_scale / MAX_DIST);
+}
+   
+
+
+void main()
+{
+    // check image bounds - on pass, begin checking the ray against the scene representation
+    if(global_loc.x < dimensions.x && global_loc.y < dimensions.y){ 
+        vec4 col = vec4(0, 0, 0, 1);
+
+        // ray gen
+        vec3 ro = ray_origin;
+        float aspect_ratio = float(dimensions.x) / float(dimensions.y);
+        vec3 rd = normalize(aspect_ratio*pixcoord.x*basis_x + pixcoord.y*basis_y + (1./fov)*basis_z);
+    
+        // color the ray
+        col.rgb = get_color_for_ray(ro, rd);
+
         // tonemapping 
         switch(tonemap_mode)
         {
@@ -1739,13 +1710,11 @@ void main()
                 col.xyz = jodieReinhard2ElectricBoogaloo(col.xyz);
                 break;
         }   
+
         // gamma correction
         col.rgb = pow(col.rgb, vec3(1/gamma));
 
         vec4 read = imageLoad(accum, ivec2(global_loc.xy));
         imageStore(accum, ivec2(global_loc.xy), vec4(mix(read.rgb, col.rgb, 1./max(1.,read.a)), read.a+1.));
-
-        // imageStore(accum, ivec2(global_loc.xy), vec4(mix(read.rgb, vec3(gl_GlobalInvocationID.xy/255., read.a/255.), 1./max(0.1,read.a)), read.a+1.));
-        // imageStore(accum, ivec2(global_loc.xy), vec4(gl_GlobalInvocationID.xy/255., 0., 1.));
     }
 }
