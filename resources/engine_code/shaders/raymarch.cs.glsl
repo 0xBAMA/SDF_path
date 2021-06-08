@@ -9,7 +9,7 @@ layout( binding = 1, rgba32f ) uniform image2D accum;
 
 #define MAX_STEPS 500
 #define MAX_DIST  100.
-#define EPSILON   0.002 // closest surface distance
+#define EPSILON   0.001 // closest surface distance
 
 #define MAX_BOUNCES 5
 
@@ -1537,14 +1537,38 @@ float ffde(vec3 p){
 //     // return fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.1,-2.5))*2.2;
 // }
 
+float fde0(vec3 p0){
+    p0 = mod(p0, 2.)-1.;
+    vec4 p = vec4(p0, 1.);
+    p=abs(p);
+    if(p.x < p.z)p.xz = p.zx;
+    if(p.z < p.y)p.zy = p.yz;
+    if(p.y < p.x)p.yx = p.xy;
+    for(int i = 0; i < 8; i++){
+        if(p.x < p.z)p.xz = p.zx;
+        if(p.z < p.y)p.zy = p.yz;
+        if(p.y < p.x)p.yx = p.xy;
+        
+        p.xyz = abs(p.xyz);
+
+        p*=(1.6/clamp(dot(p.xyz,p.xyz),0.6,1.));
+        p.xyz-=vec3(0.7,1.8,0.5);
+        p*=1.2;
+
+    }
+    float m = 1.5;
+    p.xyz-=clamp(p.xyz,-m,m);
+    return length(p.xyz)/p.w;
+}
 
 float decross(vec3 p){
-  float s = 0.2; // size of the cross members
+  float s = 0.01; // size of the cross members
   float da = max (abs(p.x), abs(p.y));
   float db = max (abs(p.y), abs(p.z));
   float dc = max (abs(p.z), abs(p.x));
   return min(da,min(db,dc)) - s;
 }
+
 
 
 float de(vec3 p){
@@ -1553,16 +1577,18 @@ float de(vec3 p){
     albedo = basic_diffuse;
     
     float d = 1000.;
-    float dcross = decross(p);
+    float dcross = decross(p - vec3(-1.2, 0.55, 1.0));
     
     d = min(d, dcross);
-    if(d == dcross) current_emission = vec3(1.7, 2.7, 1.3);
+    if(d == dcross) current_emission = vec3(1.4, 0.7, 0.3);
 
-    float dffde = ffde(p);
+    float dffde = fde0(p);
     d = min(d, dffde);
     if(d == dffde)
+        {
         albedo = vec3(0.5,0.2,0.1);
-    
+        current_emission = vec3(0.0);
+        }
     
     return d;
 }
@@ -1705,7 +1731,7 @@ vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
         vec3 reflected = reflect(ro-old_ro, normal) * 25.; 
 
         
-        vec3 temp = mix(reflected, RandomUnitVector(), 0.2);
+        vec3 temp = mix(reflected, RandomUnitVector(), 0.6);
 
         // vec3 randomvector = normalize((1.+EPSILON)*normal + RandomUnitVector());
         vec3 randomvector = normalize((1.+EPSILON)*normal + temp);
@@ -1808,19 +1834,27 @@ void main()
 {
     // check image bounds - on pass, begin checking the ray against the scene representation
     if(global_loc.x < dimensions.x && global_loc.y < dimensions.y){ 
-        vec4 col = vec4(0, 0, 0, 1);
+    vec4 col = vec4(0, 0, 0, 1);
+    float dresult_avg = 0.;
+
+    for(int x = 0; x < AA; x++)
+    for(int y = 0; y < AA; y++)
+    {
+        vec2 offset = vec2(float(x), float(y)) / float(AA) - 0.5;
+
+        vec2 pixcoord = (vec2(global_loc.xy + offset)-vec2(imageSize(current)/2.)) / vec2(imageSize(current)/2.);
+        vec3 ro = ray_origin;
 
         // ray gen
-        vec3 ro = ray_origin;
         float aspect_ratio = float(dimensions.x) / float(dimensions.y);
         vec3 rd = normalize(aspect_ratio*pixcoord.x*basis_x + pixcoord.y*basis_y + (1./fov)*basis_z);
     
         // color the ray
-        col.rgb = get_color_for_ray(ro, rd);
-        float dresult = raymarch(ro, rd);
+        col.rgb += get_color_for_ray(ro, rd);
+        // float dresult = raymarch(ro, rd);
 
-        vec3 hitpos = ro+dresult*rd;
-        vec3 normal = norm(hitpos);
+        // vec3 hitpos = ro+dresult*rd;
+        // vec3 normal = norm(hitpos);
 
         // vec3 shadow_ro = hitpos+normal*EPSILON*2.;
 
@@ -1838,28 +1872,30 @@ void main()
         
 
        // compute the depth scale term
-        float depth_term = dresult * depth_scale; 
-        switch(depth_falloff)
-        {
-            case 0: depth_term = 0.;
-            case 1: depth_term = 2.-2.*(1./(1.-depth_term)); break;
-            case 2: depth_term = 1.-(1./(1+0.1*depth_term*depth_term)); break;
-            case 3: depth_term = (1-pow(depth_term/30., 1.618)); break;
+        // float depth_term = dresult * depth_scale; 
+        // switch(depth_falloff)
+        // {
+        //     case 0: depth_term = 0.;
+        //     case 1: depth_term = 2.-2.*(1./(1.-depth_term)); break;
+        //     case 2: depth_term = 1.-(1./(1+0.1*depth_term*depth_term)); break;
+        //     case 3: depth_term = (1-pow(depth_term/30., 1.618)); break;
 
-            case 4: depth_term = clamp(exp(0.25*depth_term-3.), 0., 10.); break;
-            case 5: depth_term = exp(0.25*depth_term-3.); break;
-            case 6: depth_term = exp( -0.002 * depth_term * depth_term * depth_term ); break;
-            case 7: depth_term = exp(-0.6*max(depth_term-3., 0.0)); break;
+        //     case 4: depth_term = clamp(exp(0.25*depth_term-3.), 0., 10.); break;
+        //     case 5: depth_term = exp(0.25*depth_term-3.); break;
+        //     case 6: depth_term = exp( -0.002 * depth_term * depth_term * depth_term ); break;
+        //     case 7: depth_term = exp(-0.6*max(depth_term-3., 0.0)); break;
     
-            case 8: depth_term = (sqrt(depth_term)/8.) * depth_term; break;
-            case 9: depth_term = sqrt(depth_term/9.); break;
-            case 10: depth_term = pow(depth_term/10., 2.); break;
-            case 11: depth_term = dresult/MAX_DIST;
-            default: break;
+        //     case 8: depth_term = (sqrt(depth_term)/8.) * depth_term; break;
+        //     case 9: depth_term = sqrt(depth_term/9.); break;
+        //     case 10: depth_term = pow(depth_term/10., 2.); break;
+        //     case 11: depth_term = dresult/MAX_DIST;
+        //     default: break;
+        // }
+        // // do a mix here, between col and the fog color, with the selected depth falloff term
+        // col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
         }
-        // do a mix here, between col and the fog color, with the selected depth falloff term
-        col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
-        
+        col.rgb /= float(AA*AA);
+    
         // tonemapping 
         switch(tonemap_mode)
         {
