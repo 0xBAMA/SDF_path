@@ -12,7 +12,6 @@ layout( binding = 1, rgba32f ) uniform image2D accum;
 #define EPSILON   0.002 // closest surface distance
 
 #define MAX_BOUNCES 5
-#define NUM_SAMPLES 2
 
 #define AA 2
 
@@ -1491,39 +1490,84 @@ float fde(vec3 p) {
   }
   return length(p)/s;
 }
+float ffde(vec3 p){
+    p.xz=abs(.5-mod(p.xz,3.))+.01;
+    float DEfactor=1.;
+    for (int i=0; i<14; i++) {
+        p = abs(p)-vec3(0.,2.,0.);  
+        float r2 = dot(p, p);
+        float sc=2./clamp(r2,0.4,1.);
+        p*=sc; 
+        DEfactor*=sc;
+        p = p - vec3(0.5,1.,0.5);
+    }
+    return length(p)/DEfactor-.0005;
+}
+
+
+// float de(vec3 p){
+//     albedo = vec3(0);
+//     current_emission = vec3(0);
+//     float d102 = fractal_de102(p+vec3(0.14, 0., -0.5));
+//     float d165 = fractal_de165(p);
+//     float d51  = fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.6,-2.5))*2.2;
+
+//     float t = 0.;
+//     float d = smin_blend(d102, d165, 0.01, 1., t);
+//     d = min(d,ffde(p*20)/20);
+
+// // blending -
+//     albedo = vec3(1.61,1.5,0.9);
+//     vec3 amb165 = vec3(0.2,0.2,0.54);
+//     vec3 amb51  = vec3(15.11,9.6,2.18);
+
+
+//     d = smin_blend(d, d51, 0.003, 1.0, t);
+
+//     albedo = mix(albedo, amb51, t);
+//     current_emission = mix(vec3(0), amb51, t);
+
+//     float dbox = fBox(p - vec3(-0.2,.1,0.2), vec3(0.1, 1000., 0.01));
+
+//     d = min(d, dbox);
+//     if(d == dbox) current_emission = vec3(19.1, 17.2, 2.4);
+    
+//     return d;
+//     // return smin_op(smin_op(fractal_de102(p+vec3(0.14, 0., -0.5)), fractal_de165(p), 0.1), fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.6,-2.5))*2.2, 0.01);
+//     // return fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.1,-2.5))*2.2;
+// }
+
+
+float decross(vec3 p){
+  float s = 0.2; // size of the cross members
+  float da = max (abs(p.x), abs(p.y));
+  float db = max (abs(p.y), abs(p.z));
+  float dc = max (abs(p.z), abs(p.x));
+  return min(da,min(db,dc)) - s;
+}
 
 
 float de(vec3 p){
-    albedo = vec3(0);
-    current_emission = vec3(0);
-    float d102 = fractal_de102(p+vec3(0.14, 0., -0.5));
-    float d165 = fractal_de165(p);
-    float d51  = fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.6,-2.5))*2.2;
 
-    float t = 0.;
-    float d = smin_blend(d102, d165, 0.01, 1., t);
-    d = min(d,fde(p*20)/20);
+    current_emission = vec3(0.);
+    albedo = basic_diffuse;
+    
+    float d = 1000.;
+    float dcross = decross(p);
+    
+    d = min(d, dcross);
+    if(d == dcross) current_emission = vec3(1.7, 2.7, 1.3);
 
-// blending -
-    albedo = vec3(1.61,1.5,0.9);
-    vec3 amb165 = vec3(0.2,0.2,0.54);
-    vec3 amb51  = vec3(22.11,18.6,10.18);
-
-
-    d = smin_blend(d, d51, 0.003, 1.0, t);
-
-    albedo = mix(albedo, amb51, t);
-    current_emission = mix(vec3(0), amb51, t);
-
-    float dbox = fBox(p - vec3(-0.2,.1,0.2), vec3(0.1, 1., 0.01));
-
-    d = min(d, dbox);
-    if(d == dbox) current_emission = vec3(19.1, 17.2, 2.4);
+    float dffde = ffde(p);
+    d = min(d, dffde);
+    if(d == dffde)
+        albedo = vec3(0.5,0.2,0.1);
+    
     
     return d;
-    // return smin_op(smin_op(fractal_de102(p+vec3(0.14, 0., -0.5)), fractal_de165(p), 0.1), fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.6,-2.5))*2.2, 0.01);
-    // return fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.1,-2.5))*2.2;
 }
+
+
 
 //  ╦═╗┌─┐┌┐┌┌┬┐┌─┐┬─┐┬┌┐┌┌─┐  ╔═╗┌─┐┌┬┐┌─┐
 //  ╠╦╝├┤ │││ ││├┤ ├┬┘│││││ ┬  ║  │ │ ││├┤ 
@@ -1606,11 +1650,12 @@ uint wang_hash(){
     seed = seed ^ (seed >> 15);
     return seed;
 }
+
 float RandomFloat01(){
     return float(wang_hash()) / 4294967296.0;
 }
-vec3 RandomUnitVector()
-{
+
+vec3 RandomUnitVector(){
     float z = RandomFloat01() * 2.0f - 1.0f;
     float a = RandomFloat01() * 2. * M_PI;
     float r = sqrt(1.0f - z * z);
@@ -1618,6 +1663,12 @@ vec3 RandomUnitVector()
     float y = r * sin(a);
     return vec3(x, y, z);
 }
+
+vec3 RandomInUnitDisk(){
+    return vec3(RandomUnitVector().xy, 0.);
+}
+
+
 
 vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
     escape = 0.;
@@ -1641,13 +1692,25 @@ vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
             final_color += throughput*sky_color;
             break;
         }
+
+        vec3 old_ro = ro;
         
         ro = ro+dresult*rd;
+
+
         vec3 normal = norm(ro);
         ro += EPSILON * normal;
 
         
-        rd = normalize((1.+EPSILON)*normal+RandomUnitVector());
+        vec3 reflected = reflect(ro-old_ro, normal) * 25.; 
+
+        
+        vec3 temp = mix(reflected, RandomUnitVector(), 0.2);
+
+        // vec3 randomvector = normalize((1.+EPSILON)*normal + RandomUnitVector());
+        vec3 randomvector = normalize((1.+EPSILON)*normal + temp);
+        
+        rd = randomvector;
 
         
         final_color += throughput*current_emission*(1/pow(dresult, 2.));
@@ -1658,9 +1721,7 @@ vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
         if(length(current_emission) > 0.5) break; // if you hit a light, escape
     }  
     
-
     return final_color;
-
 
     // return RandomUnitVector().xyz;
     // return vec3(dresult * depth_scale / MAX_DIST);
@@ -1761,19 +1822,19 @@ void main()
         vec3 hitpos = ro+dresult*rd;
         vec3 normal = norm(hitpos);
 
-        vec3 shadow_ro = hitpos+normal*EPSILON*2.;
+        // vec3 shadow_ro = hitpos+normal*EPSILON*2.;
 
-        vec3 sresult1 = vec3(0.);
-        vec3 sresult2 = vec3(0.);
-        vec3 sresult3 = vec3(0.);
+        // vec3 sresult1 = vec3(0.);
+        // vec3 sresult2 = vec3(0.);
+        // vec3 sresult3 = vec3(0.);
         
-        sresult1 = phong_lighting(1, hitpos, normal, shadow_ro) * flickerfactor1;
-        sresult2 = phong_lighting(2, hitpos, normal, shadow_ro) * flickerfactor2;
-        sresult3 = phong_lighting(3, hitpos, normal, shadow_ro) * flickerfactor3;
+        // sresult1 = phong_lighting(1, hitpos, normal, shadow_ro) * flickerfactor1;
+        // sresult2 = phong_lighting(2, hitpos, normal, shadow_ro) * flickerfactor2;
+        // sresult3 = phong_lighting(3, hitpos, normal, shadow_ro) * flickerfactor3;
         
-        col.rgb += basic_diffuse * (sresult1 + sresult2 + sresult3);
+        // col.rgb += basic_diffuse * (sresult1 + sresult2 + sresult3);
         
-        col.rgb *= ((1./AO_scale) * calcAO(shadow_ro, normal)); // ambient occlusion calculation
+        // col.rgb *= ((1./AO_scale) * calcAO(shadow_ro, normal)); // ambient occlusion calculation
         
 
        // compute the depth scale term

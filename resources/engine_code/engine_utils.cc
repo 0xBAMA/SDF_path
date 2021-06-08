@@ -143,7 +143,7 @@ void engine::create_window() {
   cout << "creating window...";
 
   window = SDL_CreateWindow(
-      "Raymarcher", 0, 0, WIDTH*3, HEIGHT*3,
+      "Raymarcher", 0, 0, WIDTH, HEIGHT,
       SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE);
   SDL_ShowWindow(window);
 
