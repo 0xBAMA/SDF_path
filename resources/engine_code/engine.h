@@ -4,7 +4,7 @@
 #include "includes.h"
 
 // These defines are used to simplify the ImGui::Combo things in engine_utils.cc
- 
+
 // colorspace
 #define RGB       0
 #define SRGB      1
@@ -77,20 +77,20 @@ private:
 	// float rotation_about_y = -0.63;
 	// float rotation_about_z = 1.38;
 // second scene
-	float rotation_about_x = -0.16;
-	float rotation_about_y = 0.47;
-	float rotation_about_z = 1.38;
+	float rotation_about_x = 0.4;
+	float rotation_about_y = -0.2;
+	float rotation_about_z = 0.;
 
 	// base color
-	glm::vec3 basic_diffuse = glm::vec3(45./255., 45./255., 45./255.);
-		
+	glm::vec3 basic_diffuse = glm::vec3(187./255., 135./255., 45./255.);
+
 	// light animation factors
 	void animate_lights(float t);
 	float flickerfactor1 = 1.0;
 	float orbitradius1 = 2.0;
 	float orbitrate1 = 1.2;
 	float phaseoffset1 = 0.5;
-		
+
 	float flickerfactor2 = 1.0;
 	float orbitradius2 = 2.2;
 	float orbitrate2 = 1.3;
@@ -100,12 +100,12 @@ private:
 	float orbitradius3 = 2.9;
 	float orbitrate3 = 1.8;
 	float phaseoffset3 = 4.4;
-		
+
 	// diffuse light colors
 	glm::vec3 lightCol1d = glm::vec3( 0.6f, 0.6f, 0.6f);
 	glm::vec3 lightCol2d = glm::vec3( 0.75f, 0.3f, 0.0f);
 	glm::vec3 lightCol3d = glm::vec3( 0.1f, 0.35f, 0.65f);
-	// specular light colors	
+	// specular light colors
 	glm::vec3 lightCol1s = glm::vec3( 0.5f, 0.5f, 0.5f);
 	glm::vec3 lightCol2s = glm::vec3( 0.5f, 0.5f, 0.5f);
 	glm::vec3 lightCol3s = glm::vec3( 0.5f, 0.5f, 0.5f);
@@ -129,7 +129,7 @@ private:
 
 	float AO_scale = 1.;
 	float depth_scale = 1.;
-	int depth_selector = 8;	
+	int depth_selector = 8;
 
 	int sample_counter = 0;
 
@@ -139,17 +139,18 @@ private:
 // first arrangment
 	// glm::vec3 position = glm::vec3(0.496222, -0.595141, -2.119943);
 // second arrangment
-	glm::vec3 position = glm::vec3(-1.709170, 0.093756, -1.045113);
+// glm::vec3 position = glm::vec3(-1.709170, 0.093756, -1.045113);
+	glm::vec3 position = glm::vec3(0.3, 0.78, -1.44);
 
 	glm::vec3 basis_x, basis_y, basis_z;
 
-	float gamma_correction = 0.44;
+	float gamma_correction = 2.2;
 	int current_tmode = 6;
     int current_colorspace = CHROMAMAX;
     int current_noise_func = BAYER;
     int current_dither_mode = EXPONENTIAL;
 
-	int num_bits = 4; 
+	int num_bits = 4;
 
 	void screenshot(std::string name);
 
@@ -167,9 +168,9 @@ private:
 	int dither_microseconds;
 	int raymarch_microseconds;
 	int display_microseconds;
-		
+
 	int total_loop_microseconds=0;
-		
+
 	// render flags (toggle shader execution)
 	bool raymarch_stage = true;
 	bool dither_stage = true;

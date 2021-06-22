@@ -11,7 +11,7 @@ layout( binding = 1, rgba32f ) uniform image2D accum;
 #define MAX_DIST  100.
 #define EPSILON   0.001 // closest surface distance
 
-#define MAX_BOUNCES 5
+#define MAX_BOUNCES 7
 
 #define AA 2
 
@@ -1472,7 +1472,7 @@ float fde(vec3 p) {
   float scale = 2.1, off0 = .8, off1 = .3, off2 = .83;
   vec3 off =vec3(2.,.2,.1);
   float s=1.0;
-  for(int i = 0;++i<20;) { 
+  for(int i = 0;++i<20;) {
     p.xy = abs(p.xy);
     p.xy = fold45(p.xy);
     p.y -= off0;
@@ -1494,10 +1494,10 @@ float ffde(vec3 p){
     p.xz=abs(.5-mod(p.xz,3.))+.01;
     float DEfactor=1.;
     for (int i=0; i<14; i++) {
-        p = abs(p)-vec3(0.,2.,0.);  
+        p = abs(p)-vec3(0.,2.,0.);
         float r2 = dot(p, p);
         float sc=2./clamp(r2,0.4,1.);
-        p*=sc; 
+        p*=sc;
         DEfactor*=sc;
         p = p - vec3(0.5,1.,0.5);
     }
@@ -1531,7 +1531,7 @@ float ffde(vec3 p){
 
 //     d = min(d, dbox);
 //     if(d == dbox) current_emission = vec3(19.1, 17.2, 2.4);
-    
+
 //     return d;
 //     // return smin_op(smin_op(fractal_de102(p+vec3(0.14, 0., -0.5)), fractal_de165(p), 0.1), fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.6,-2.5))*2.2, 0.01);
 //     // return fractal_de51((rotate3D(-0.03,vec3(1.,1.,1.))*p/2.2)+vec3(1.0,1.1,-2.5))*2.2;
@@ -1548,7 +1548,7 @@ float fde0(vec3 p0){
         if(p.x < p.z)p.xz = p.zx;
         if(p.z < p.y)p.zy = p.yz;
         if(p.y < p.x)p.yx = p.xy;
-        
+
         p.xyz = abs(p.xyz);
 
         p*=(1.6/clamp(dot(p.xyz,p.xyz),0.6,1.));
@@ -1561,42 +1561,102 @@ float fde0(vec3 p0){
     return length(p.xyz)/p.w;
 }
 
-float decross(vec3 p){
-  float s = 0.01; // size of the cross members
+float fCross(vec3 p, float s){
   float da = max (abs(p.x), abs(p.y));
   float db = max (abs(p.y), abs(p.z));
   float dc = max (abs(p.z), abs(p.x));
   return min(da,min(db,dc)) - s;
 }
 
-
-
 float de(vec3 p){
 
     current_emission = vec3(0.);
     albedo = basic_diffuse;
-    
-    float d = 1000.;
-    float dcross = decross(p - vec3(-1.2, 0.55, 1.0));
-    
-    d = min(d, dcross);
-    if(d == dcross) current_emission = vec3(1.4, 0.7, 0.3);
+		//
+    // float d = 1000.;
+    // float dcross = fCross(p - vec3(-1.2, 0.55, 1.0), 0.2);
+		//
+    // d = min(d, dcross);
+    // if(d == dcross) current_emission = vec3(1.4, 0.7, 0.3);
+		//
+    // float dffde = fde0(p);
+    // d = min(d, dffde);
+    // if(d == dffde)
+    //     {
+    //     albedo = vec3(0.5,0.2,0.1);
+    //     current_emission = vec3(0.0);
+    //     }
+		//
+    // return d;
 
-    float dffde = fde0(p);
-    d = min(d, dffde);
-    if(d == dffde)
-        {
-        albedo = vec3(0.5,0.2,0.1);
-        current_emission = vec3(0.0);
-        }
-    
-    return d;
+
+
+		float box_size = 1.2;
+
+		float top_and_bottom = min(fPlane(p, vec3(0,1,0), 1.5), fPlane(p, vec3(0,-1,0), box_size));
+		float left_wall = fPlane(p, vec3(1,0,0), box_size);
+		float right_wall = fPlane(p, vec3(-1,0,0), box_size);
+		float back_wall = fPlane(p, vec3(0,0,-1), box_size);
+
+		float top_bottom_back = min(top_and_bottom, back_wall);
+
+		float walls = min(min(left_wall, right_wall), top_bottom_back);
+
+		// check walls against left and right, top_bottom_back, to determine material
+
+		float light = min(distance(p, vec3(0,box_size+0.2,0)), distance(p, vec3(0,-(box_size+0.2),0))) - 0.3;
+
+		// if the distance is the
+
+		float walls_and_light = min(walls, light);
+
+		float width = 0.5;
+		vec3 boxsize = vec3(1.618*width, 2.*width/9., width);
+		vec3 offset = vec3(0.032);
+
+		float front_cross = fCross(p+(boxsize+offset), 0.016);
+		float back_cross = fCross(p-(boxsize+offset), 0.016);
+		float center_box = fBox(p, boxsize);
+
+		float focus_object = min(min(front_cross, back_cross), center_box);
+
+		float dfinal = min(walls_and_light, focus_object);
+
+		if(dfinal == left_wall)
+		{
+			albedo = vec3(1,0,0);
+		}
+
+		if(dfinal == right_wall)
+		{
+			albedo = vec3(0,1,0);
+		}
+
+		if(dfinal == top_bottom_back)
+		{
+			albedo = vec3(1,1,1);
+		}
+
+		if(dfinal == front_cross || dfinal == back_cross)
+		{
+			albedo = vec3(0.2, 0.2, 0.8);
+		}
+
+
+
+		if(dfinal == light)
+		{
+			current_emission = vec3(8.);
+			albedo = vec3(1.);
+		}
+		return dfinal;
+
 }
 
 
 
 //  ╦═╗┌─┐┌┐┌┌┬┐┌─┐┬─┐┬┌┐┌┌─┐  ╔═╗┌─┐┌┬┐┌─┐
-//  ╠╦╝├┤ │││ ││├┤ ├┬┘│││││ ┬  ║  │ │ ││├┤ 
+//  ╠╦╝├┤ │││ ││├┤ ├┬┘│││││ ┬  ║  │ │ ││├┤
 //  ╩╚═└─┘┘└┘─┴┘└─┘┴└─┴┘└┘└─┘  ╚═╝└─┘─┴┘└─┘
 // global state tracking
 uint num_steps = 0; // how many steps taken by the raymarch function
@@ -1616,7 +1676,7 @@ float raymarch(vec3 ro, vec3 rd) {
 
 vec3 norm(vec3 p) { // to get the normal vector for a point in space, this function evaluates the gradient of the distance function
 #define METHOD 1
-#if METHOD == 0 
+#if METHOD == 0
     // tetrahedron version, unknown source - 4 evaluations
     vec2 e = vec2(1,-1) * EPSILON;
     return normalize(e.xyy*de(p+e.xyy)+e.yyx*de(p+e.yyx)+e.yxy*de(p+e.yxy)+e.xxx*de(p+e.xxx));
@@ -1648,19 +1708,19 @@ uvec4 pcg4d(vec2 s)
     uvec4 v = uvec4(s, uint(s.x) ^ uint(s.y), uint(s.x) + uint(s.y));
 
     v = v * 1664525u + 1013904223u;
-    
+
     v.x += v.y*v.w;
     v.y += v.z*v.x;
     v.z += v.x*v.y;
     v.w += v.y*v.z;
-    
+
     v ^= v >> 16u;
-    
+
     v.x += v.y*v.w;
     v.y += v.z*v.x;
     v.z += v.x*v.y;
     v.w += v.y*v.z;
-    
+
     return v;
 }
 
@@ -1699,14 +1759,14 @@ vec3 RandomInUnitDisk(){
 vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
     escape = 0.;
     vec3 ro = ro_in, rd = rd_in;
-    
+
     // float dresult = raymarch(ro, rd);
     // float escape_result = escape;
 
 
     // so first hit location is known in hitpos, and surface normal at that point in the normal
 
-    
+
     vec3 final_color = vec3(0.);
     vec3 throughput = vec3(1.);
     for(int i = 0; i < MAX_BOUNCES; i++){
@@ -1720,39 +1780,37 @@ vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
         }
 
         vec3 old_ro = ro;
-        
+
         ro = ro+dresult*rd;
 
 
         vec3 normal = norm(ro);
         ro += EPSILON * normal;
 
-        
-        vec3 reflected = reflect(ro-old_ro, normal) * 25.; 
 
-        
-        vec3 temp = mix(reflected, RandomUnitVector(), 0.6);
+        // vec3 reflected = reflect(ro-old_ro, normal) * 25.;
+        // vec3 temp = mix(reflected, RandomUnitVector(), 0.6);
 
-        // vec3 randomvector = normalize((1.+EPSILON)*normal + RandomUnitVector());
-        vec3 randomvector = normalize((1.+EPSILON)*normal + temp);
-        
+        vec3 randomvector = normalize((1.+EPSILON)*normal + RandomUnitVector());
+        // vec3 randomvector = normalize((1.+EPSILON)*normal + temp);
+
         rd = randomvector;
 
-        
-        final_color += throughput*current_emission*(1/pow(dresult, 2.));
+
+        final_color += throughput*current_emission;
         // throughput *= (albedo/3.14159)*dot(rd,normal);
         throughput *= albedo;
 
 
-        if(length(current_emission) > 0.5) break; // if you hit a light, escape
-    }  
-    
+        if( current_emission.x > 0. || current_emission.y > 0. || current_emission.z > 0. ) break; // if you hit a light, escape
+    }
+
     return final_color;
 
     // return RandomUnitVector().xyz;
     // return vec3(dresult * depth_scale / MAX_DIST);
 }
-   
+
 float sharp_shadow( in vec3 ro, in vec3 rd, float mint, float maxt ){
     for( float t=mint; t<maxt; )    {
         float h = de(ro + rd*t);
@@ -1793,20 +1851,20 @@ vec3 phong_lighting(int lightnum, vec3 hitloc, vec3 norm, vec3 eye_pos){
 
     mint = EPSILON;
     maxt = distance(hitloc, lightpos);
-    
+
     vec3 l = normalize(lightpos - hitloc);
     vec3 v = normalize(eye_pos - hitloc);
     vec3 h = normalize(l+v);
     vec3 n = normalize(norm);
-    
+
     // then continue with the phong calculation
     vec3 diffuse_component, specular_component;
-    
+
     // check occlusion with the soft/sharp shadow
     float occlusion_term = sharp_shadow(hitloc, l, mint, maxt);
 
     float dattenuation_term = 1./pow(distance(hitloc, lightpos), 1.1);
-    
+
     diffuse_component = occlusion_term * dattenuation_term * max(dot(n, l), 0.) * lightcoldiff;
     specular_component = (dot(n,l) > 0) ? occlusion_term * dattenuation_term * ((lightspecpow+2)/(2*M_PI)) * pow(max(dot(n,h),0.),lightspecpow) * lightcolspec : vec3(0);
 
@@ -1833,7 +1891,7 @@ float calcAO( in vec3 pos, in vec3 nor )
 void main()
 {
     // check image bounds - on pass, begin checking the ray against the scene representation
-    if(global_loc.x < dimensions.x && global_loc.y < dimensions.y){ 
+    if(global_loc.x < dimensions.x && global_loc.y < dimensions.y){
     vec4 col = vec4(0, 0, 0, 1);
     float dresult_avg = 0.;
 
@@ -1848,7 +1906,7 @@ void main()
         // ray gen
         float aspect_ratio = float(dimensions.x) / float(dimensions.y);
         vec3 rd = normalize(aspect_ratio*pixcoord.x*basis_x + pixcoord.y*basis_y + (1./fov)*basis_z);
-    
+
         // color the ray
         col.rgb += get_color_for_ray(ro, rd);
         // float dresult = raymarch(ro, rd);
@@ -1861,18 +1919,18 @@ void main()
         // vec3 sresult1 = vec3(0.);
         // vec3 sresult2 = vec3(0.);
         // vec3 sresult3 = vec3(0.);
-        
+
         // sresult1 = phong_lighting(1, hitpos, normal, shadow_ro) * flickerfactor1;
         // sresult2 = phong_lighting(2, hitpos, normal, shadow_ro) * flickerfactor2;
         // sresult3 = phong_lighting(3, hitpos, normal, shadow_ro) * flickerfactor3;
-        
+
         // col.rgb += basic_diffuse * (sresult1 + sresult2 + sresult3);
-        
+
         // col.rgb *= ((1./AO_scale) * calcAO(shadow_ro, normal)); // ambient occlusion calculation
-        
+
 
        // compute the depth scale term
-        // float depth_term = dresult * depth_scale; 
+        // float depth_term = dresult * depth_scale;
         // switch(depth_falloff)
         // {
         //     case 0: depth_term = 0.;
@@ -1884,7 +1942,7 @@ void main()
         //     case 5: depth_term = exp(0.25*depth_term-3.); break;
         //     case 6: depth_term = exp( -0.002 * depth_term * depth_term * depth_term ); break;
         //     case 7: depth_term = exp(-0.6*max(depth_term-3., 0.0)); break;
-    
+
         //     case 8: depth_term = (sqrt(depth_term)/8.) * depth_term; break;
         //     case 9: depth_term = sqrt(depth_term/9.); break;
         //     case 10: depth_term = pow(depth_term/10., 2.); break;
@@ -1895,8 +1953,8 @@ void main()
         // col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
         }
         col.rgb /= float(AA*AA);
-    
-        // tonemapping 
+
+        // tonemapping
         switch(tonemap_mode)
         {
             case 0: // None (Linear)
@@ -1946,7 +2004,7 @@ void main()
             case 15: // jodieReinhard2
                 col.xyz = jodieReinhard2ElectricBoogaloo(col.xyz);
                 break;
-        }   
+        }
 
         // gamma correction
         col.rgb = pow(col.rgb, vec3(1/gamma));
