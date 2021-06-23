@@ -643,6 +643,7 @@ void engine::animate_lights(float t){
 
   //query with p.noise(x,y,z); - returns value 0.-1.
 
+
   // each of the lights has a flickerfactor (set by this function, passed to GPU), orbitradius, orbitrate, and phaseoffset, which help to set this flickerfactor
   //  the noise will be sampled along a circle in the xz plane, controlled by sinusoids,
   //   in the form  x = orbitradius * cos( orbitrate * t + phaseoffset )
@@ -686,6 +687,10 @@ void engine::draw_everything() {
   basis_y = (rotation*glm::vec4(0,1,0,0)).xyz();
   basis_z = (rotation*glm::vec4(0,0,1,0)).xyz();
 
+    static unsigned int frame = 0;
+    frame++; // increment
+
+
   auto t_raymarch_start = std::chrono::high_resolution_clock::now();
   if(raymarch_stage){ // toggles invocation of the raymarch step
     //  ╦═╗┌─┐┬ ┬┌┬┐┌─┐┬─┐┌─┐┬ ┬
@@ -693,6 +698,8 @@ void engine::draw_everything() {
     //  ╩╚═┴ ┴ ┴ ┴ ┴┴ ┴┴└─└─┘┴ ┴
     // using the raymarch shader
     glUseProgram(raymarch_shader);
+
+    glUniform1i(glGetUniformLocation(raymarch_shader, "frame"), frame); // send
 
     // send basis vectors to the raymarch shader
     glUniform3f(glGetUniformLocation(raymarch_shader, "basis_x"), basis_x.x, basis_x.y, basis_x.z);

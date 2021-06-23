@@ -133,7 +133,8 @@ private:
 
 	int sample_counter = 0;
 
-	float fov = 1.;
+	float fov = 0.164;
+	// float fov = 1.;
 
 	// position
 // first arrangment
@@ -145,12 +146,12 @@ private:
 	glm::vec3 basis_x, basis_y, basis_z;
 
 	float gamma_correction = 2.2;
-	int current_tmode = 6;
+	int current_tmode = 0;
     int current_colorspace = CHROMAMAX;
     int current_noise_func = BAYER;
     int current_dither_mode = EXPONENTIAL;
 
-	int num_bits = 4;
+	int num_bits = 8;
 
 	void screenshot(std::string name);
 

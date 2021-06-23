@@ -5,6 +5,8 @@ layout( local_size_x = 32, local_size_y = 32, local_size_z = 1 ) in;
 layout( binding = 0, rgba8ui ) uniform uimage2D current;
 layout( binding = 1, rgba32f ) uniform image2D accum;
 
+layout( binding = 3 ) uniform sampler2D blue_noise_dither_pattern;
+
 #define M_PI 3.1415926535897932384626433832795
 
 #define MAX_STEPS 500
@@ -14,6 +16,8 @@ layout( binding = 1, rgba32f ) uniform image2D accum;
 #define MAX_BOUNCES 7
 
 #define AA 2
+
+uniform int frame;         // used to cycle the blue noise values over time
 
 uniform vec3 basic_diffuse;
 uniform vec3 sky_color;
@@ -1568,6 +1572,23 @@ float fCross(vec3 p, float s){
   return min(da,min(db,dc)) - s;
 }
 
+
+float deee(vec3 p){
+    p=mod(p,2.)-1.;
+    p=abs(p)-1.;
+    if(p.x < p.z)p.xz=p.zx;
+    if(p.y < p.z)p.yz=p.zy;
+    if(p.x < p.y)p.xy=p.yx;
+    float s=1.;
+    for(int i=0;i<10;i++){
+      float r2=2./clamp(dot(p,p),.1,1.);
+      p=abs(p)*r2-vec3(.6,.6,3.5);
+      s*=r2;
+    }
+    return length(p)/s;
+}
+
+
 float de(vec3 p){
 
     current_emission = vec3(0.);
@@ -1593,20 +1614,16 @@ float de(vec3 p){
 
 		float box_size = 1.2;
 
-		float top_and_bottom = min(fPlane(p, vec3(0,1,0), 1.5), fPlane(p, vec3(0,-1,0), box_size));
+		float top_and_bottom = min(fPlane(p, vec3(0,1,0), box_size), fPlane(p, vec3(0,-1,0), box_size));
 		float left_wall = fPlane(p, vec3(1,0,0), box_size);
 		float right_wall = fPlane(p, vec3(-1,0,0), box_size);
 		float back_wall = fPlane(p, vec3(0,0,-1), box_size);
+		float front_wall = fPlane(p, vec3(0,0,1), 1.5*box_size);
 
 		float top_bottom_back = min(top_and_bottom, back_wall);
 
-		float walls = min(min(left_wall, right_wall), top_bottom_back);
-
-		// check walls against left and right, top_bottom_back, to determine material
-
+		float walls = min(min(min(left_wall, right_wall), top_bottom_back), front_wall);
 		float light = min(distance(p, vec3(0,box_size+0.2,0)), distance(p, vec3(0,-(box_size+0.2),0))) - 0.3;
-
-		// if the distance is the
 
 		float walls_and_light = min(walls, light);
 
@@ -1618,7 +1635,25 @@ float de(vec3 p){
 		float back_cross = fCross(p-(boxsize+offset), 0.016);
 		float center_box = fBox(p, boxsize);
 
-		float focus_object = min(min(front_cross, back_cross), center_box);
+		center_box = max(center_box, -(distance(p, vec3(0))-0.45));
+
+		float icosa = max(fIcosahedron(p, 0.3), 0.2*deee(5.*p));
+
+		pModInterval1(p.x, 0.1, -5., 5.);
+		// pModInterval1(p.y, 0.05, -5., 5.);
+		// pModInterval1(p.z, 0.05, -5., 5.);
+
+
+
+
+
+
+		float light_box = max(fBox(p, vec3(0.001, 5., 5.)), icosa);
+
+		pModInterval1(p.y, 0.005, -50., 50.);
+		center_box = max(center_box, fBox(p, vec3(3., 0.001, 3.)));
+
+		float focus_object = min(min(min(front_cross, back_cross), center_box), icosa);
 
 		float dfinal = min(walls_and_light, focus_object);
 
@@ -1632,9 +1667,29 @@ float de(vec3 p){
 			albedo = vec3(0,1,0);
 		}
 
-		if(dfinal == top_bottom_back)
+		if(dfinal == back_wall)
+		{
+			albedo = vec3(1,1,0);
+		}
+
+		if(dfinal == front_wall)
+		{
+			albedo = vec3(0,0,1);
+		}
+
+		if(dfinal == top_and_bottom)
 		{
 			albedo = vec3(1,1,1);
+		}
+
+		if(dfinal == icosa)
+		{
+			albedo = vec3(1.);
+		}
+
+		if(dfinal == light_box)
+		{
+			current_emission = vec3(1., 0.7, 0.4)*5.;
 		}
 
 		if(dfinal == front_cross || dfinal == back_cross)
@@ -1646,8 +1701,8 @@ float de(vec3 p){
 
 		if(dfinal == light)
 		{
-			current_emission = vec3(8.);
-			albedo = vec3(1.);
+			current_emission = vec3(1., 0.9, 0.8);
+			// albedo = vec3(1.);
 		}
 		return dfinal;
 
@@ -1697,7 +1752,37 @@ vec3 norm(vec3 p) { // to get the normal vector for a point in space, this funct
 }
 
 
+vec3 get_static_monochrome_blue(){
+  return texture(blue_noise_dither_pattern, gl_GlobalInvocationID.xy/float(textureSize(blue_noise_dither_pattern, 0).r)).rrr;
+}
 
+const float c_goldenRatioConjugate = 0.61803398875;
+
+vec3 get_static_rgb_blue(){
+  vec3 read = get_static_monochrome_blue();
+
+  vec3 result = vec3(fract(read.x+c_goldenRatioConjugate),
+                     fract(read.y+2.*c_goldenRatioConjugate),
+                     fract(read.z+5.*c_goldenRatioConjugate));
+
+  return result;
+}
+
+vec3 get_cycled_monochrome_blue(){
+  vec3 read = get_static_monochrome_blue();
+
+  return vec3(fract(read+float(frame%256)*c_goldenRatioConjugate));
+}
+
+vec3 get_cycled_rgb_blue(){
+  vec3 read = get_static_monochrome_blue();
+
+  vec3 result = vec3(fract(read.x+float(frame%256)*c_goldenRatioConjugate),
+                     fract(read.y+float((frame+1)%256)*c_goldenRatioConjugate),
+                     fract(read.z+float((frame+2)%256)*c_goldenRatioConjugate));
+
+  return result;
+}
 
 
 // hash function
@@ -1802,7 +1887,7 @@ vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
         throughput *= albedo;
 
 
-        if( current_emission.x > 0. || current_emission.y > 0. || current_emission.z > 0. ) break; // if you hit a light, escape
+        // if( current_emission.x > 0. || current_emission.y > 0. || current_emission.z > 0. ) break; // if you hit a light, escape
     }
 
     return final_color;
@@ -2007,9 +2092,9 @@ void main()
         }
 
         // gamma correction
-        col.rgb = pow(col.rgb, vec3(1/gamma));
+        col.rgb = pow(col.rgb*(0.15*get_cycled_rgb_blue()+1.0), vec3(1/gamma));
 
         vec4 read = imageLoad(accum, ivec2(global_loc.xy));
-        imageStore(accum, ivec2(global_loc.xy), vec4(mix(read.rgb, col.rgb, 1./max(1., read.a)), read.a+1.));
+        imageStore(accum, ivec2(global_loc.xy), vec4(mix(read.rgb, col.rgb, 1./(read.a+1.)), read.a+1.));
     }
 }
