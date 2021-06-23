@@ -9,11 +9,11 @@ layout( binding = 3 ) uniform sampler2D blue_noise_dither_pattern;
 
 #define M_PI 3.1415926535897932384626433832795
 
-#define MAX_STEPS 500
-#define MAX_DIST  100.
-#define EPSILON   0.001 // closest surface distance
+#define MAX_STEPS 1000
+#define MAX_DIST  18.
+#define EPSILON   0.0001 // closest surface distance
 
-#define MAX_BOUNCES 7
+#define MAX_BOUNCES 8
 
 #define AA 2
 
@@ -1587,38 +1587,66 @@ float deee(vec3 p){
     }
     return length(p)/s;
 }
+float deek(vec3 p){
+    p.z-=1.5;
+    vec3 q=p;
+    float s=1.5;
+    float e=0.;
+    for(int j=0;j++<8;s*=e)
+        p=sign(p)*(1.2-abs(p-1.2)),
+        p=p*(e=8./clamp(dot(p,p),.6,5.5))+q-vec3(.3,8,.3);
+    return length(p)/s;
+}
 
+ 
+#define fold45(p)(p.y>p.x)?p.yx:p
+float deer(vec3 p) {
+  float scale = 2.1, off0 = .8, off1 = .3, off2 = .83;
+  vec3 off =vec3(2.,.2,.1);
+  float s=1.0;
+  for(int i = 0;++i<20;) { 
+    p.xy = abs(p.xy);
+    p.xy = fold45(p.xy);
+    p.y -= off0;
+    p.y = -abs(p.y);
+    p.y += off0;
+    p.x += off1;
+    p.xz = fold45(p.xz);
+    p.x -= off2;
+    p.xz = fold45(p.xz);
+    p.x += off1;
+    p -= off;
+    p *= scale;
+    p += off;
+    s *= scale;
+  }
+  return length(p)/s;
+}
 
+float derp(vec3 p){
+    p.z-=1.5;
+    vec3 q=p;
+    float s=1.5;
+    float e=0.;
+    for(int j=0;j++<8;s*=e)
+        p=sign(p)*(1.2-abs(p-1.2)),
+        p=p*(e=8./clamp(dot(p,p),.6,5.5))+q-vec3(.3,8,.3);
+    return length(p)/s;
+}
 float de(vec3 p){
 
+    vec3 porig = p;
     current_emission = vec3(0.);
     albedo = basic_diffuse;
-		//
-    // float d = 1000.;
-    // float dcross = fCross(p - vec3(-1.2, 0.55, 1.0), 0.2);
-		//
-    // d = min(d, dcross);
-    // if(d == dcross) current_emission = vec3(1.4, 0.7, 0.3);
-		//
-    // float dffde = fde0(p);
-    // d = min(d, dffde);
-    // if(d == dffde)
-    //     {
-    //     albedo = vec3(0.5,0.2,0.1);
-    //     current_emission = vec3(0.0);
-    //     }
-		//
-    // return d;
 
 
-
-		float box_size = 1.2;
+		float box_size = 0.65;
 
 		float top_and_bottom = min(fPlane(p, vec3(0,1,0), box_size), fPlane(p, vec3(0,-1,0), box_size));
 		float left_wall = fPlane(p, vec3(1,0,0), box_size);
 		float right_wall = fPlane(p, vec3(-1,0,0), box_size);
 		float back_wall = fPlane(p, vec3(0,0,-1), box_size);
-		float front_wall = fPlane(p, vec3(0,0,1), 1.5*box_size);
+		float front_wall = min(fPlane(p, vec3(0,0,1), 1.5*box_size), min(.65-length(fract(p+.5)-.5),p.y+.2));
 
 		float top_bottom_back = min(top_and_bottom, back_wall);
 
@@ -1631,29 +1659,24 @@ float de(vec3 p){
 		vec3 boxsize = vec3(1.618*width, 2.*width/9., width);
 		vec3 offset = vec3(0.032);
 
-		float front_cross = fCross(p+(boxsize+offset), 0.016);
-		float back_cross = fCross(p-(boxsize+offset), 0.016);
 		float center_box = fBox(p, boxsize);
 
-		center_box = max(center_box, -(distance(p, vec3(0))-0.45));
+		center_box = max(center_box, -(distance(porig.xz, vec2(0))-0.25));
 
-		float icosa = max(fIcosahedron(p, 0.3), 0.2*deee(5.*p));
+		float icosa = max(fIcosahedron(p, 0.3), 0.02*derp(50.*p));
 
 		pModInterval1(p.x, 0.1, -5., 5.);
 		// pModInterval1(p.y, 0.05, -5., 5.);
 		// pModInterval1(p.z, 0.05, -5., 5.);
 
 
+		float light_box = max(fBox(p, vec3(0.0004, 5., 5.)), icosa);
 
+		pModInterval1(p.y, 0.025, -50., 50.);
+		center_box = max(center_box, fBox(p, vec3(3., 0.005, 3.)));
 
-
-
-		float light_box = max(fBox(p, vec3(0.001, 5., 5.)), icosa);
-
-		pModInterval1(p.y, 0.005, -50., 50.);
-		center_box = max(center_box, fBox(p, vec3(3., 0.001, 3.)));
-
-		float focus_object = min(min(min(front_cross, back_cross), center_box), icosa);
+		// float focus_object = min(min(min(front_cross, back_cross), center_box), icosa);
+		float focus_object = min(center_box, icosa);
 
 		float dfinal = min(walls_and_light, focus_object);
 
@@ -1689,19 +1712,12 @@ float de(vec3 p){
 
 		if(dfinal == light_box)
 		{
-			current_emission = vec3(1., 0.7, 0.4)*5.;
+			current_emission = vec3(1., 0.7, 0.4)*80.;
 		}
-
-		if(dfinal == front_cross || dfinal == back_cross)
-		{
-			albedo = vec3(0.2, 0.2, 0.8);
-		}
-
-
 
 		if(dfinal == light)
 		{
-			current_emission = vec3(1., 0.9, 0.8);
+			current_emission = vec3(1., 0.9, 0.8)*100.;
 			// albedo = vec3(1.);
 		}
 		return dfinal;
@@ -1812,7 +1828,7 @@ uvec4 pcg4d(vec2 s)
 
 // from demofox
 // https://blog.demofox.org/2020/05/25/casual-shadertoy-path-tracing-1-basic-camera-diffuse-emissive/
-uint seed = uint(uint(global_loc.x) * uint(1973) + uint(global_loc.y) * uint(9277) + uint(time) * uint(26699)) | uint(1);;
+uint seed = uint(uint(global_loc.x) * uint(1973) + uint(global_loc.y) * uint(9277) + uint(time+frame) * uint(26699)) | uint(1);;
 uint wang_hash(){
     seed = uint(seed ^ uint(61)) ^ uint(seed >> uint(16));
     seed *= uint(9);
@@ -1873,11 +1889,11 @@ vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
         ro += EPSILON * normal;
 
 
-        // vec3 reflected = reflect(ro-old_ro, normal) * 25.;
-        // vec3 temp = mix(reflected, RandomUnitVector(), 0.6);
+        vec3 reflected = reflect(ro-old_ro, normal) * 25.;
+        vec3 temp = mix(reflected, RandomUnitVector(), 0.6);
+        vec3 randomvector = normalize((1.+EPSILON)*normal + temp);
 
-        vec3 randomvector = normalize((1.+EPSILON)*normal + RandomUnitVector());
-        // vec3 randomvector = normalize((1.+EPSILON)*normal + temp);
+        // vec3 randomvector = normalize((1.+EPSILON)*normal + RandomUnitVector());
 
         rd = randomvector;
 
@@ -2092,7 +2108,8 @@ void main()
         }
 
         // gamma correction
-        col.rgb = pow(col.rgb*(0.15*get_cycled_rgb_blue()+1.0), vec3(1/gamma));
+        col.rgb = pow(col.rgb*(0.1*get_cycled_rgb_blue()+1.0), vec3(1/gamma));
+        // col.rgb = pow(col.rgb, vec3(1/gamma));
 
         vec4 read = imageLoad(accum, ivec2(global_loc.xy));
         imageStore(accum, ivec2(global_loc.xy), vec4(mix(read.rgb, col.rgb, 1./(read.a+1.)), read.a+1.));

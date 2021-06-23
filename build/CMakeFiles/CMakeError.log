@@ -1,22 +1,21 @@
 Performing C SOURCE FILE Test CMAKE_HAVE_LIBC_PTHREAD failed with the following output:
-Change Dir: /home/jb/Documents/SDF_path/build/CMakeFiles/CMakeTmp
+Change Dir: /home/jb/Documents/Repos/SDF_path/build/CMakeFiles/CMakeTmp
 
-Run Build Command(s):/usr/bin/make cmTC_7f6e4/fast && /usr/bin/make  -f CMakeFiles/cmTC_7f6e4.dir/build.make CMakeFiles/cmTC_7f6e4.dir/build
-make[1]: Entering directory '/home/jb/Documents/SDF_path/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_7f6e4.dir/src.c.o
-/usr/bin/cc   -DCMAKE_HAVE_LIBC_PTHREAD -lstdc++fs -o CMakeFiles/cmTC_7f6e4.dir/src.c.o -c /home/jb/Documents/SDF_path/build/CMakeFiles/CMakeTmp/src.c
-Linking C executable cmTC_7f6e4
-/home/jb/.local/lib/python2.7/site-packages/cmake/data/bin/cmake -E cmake_link_script CMakeFiles/cmTC_7f6e4.dir/link.txt --verbose=1
-/usr/bin/cc  -DCMAKE_HAVE_LIBC_PTHREAD -lstdc++fs CMakeFiles/cmTC_7f6e4.dir/src.c.o -o cmTC_7f6e4 
-/usr/bin/ld: CMakeFiles/cmTC_7f6e4.dir/src.c.o: in function `main':
+Run Build Command(s):/usr/bin/make cmTC_3b7f8/fast && /usr/bin/make -f CMakeFiles/cmTC_3b7f8.dir/build.make CMakeFiles/cmTC_3b7f8.dir/build
+make[1]: Entering directory '/home/jb/Documents/Repos/SDF_path/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_3b7f8.dir/src.c.o
+/usr/bin/cc   -DCMAKE_HAVE_LIBC_PTHREAD -lstdc++fs   -o CMakeFiles/cmTC_3b7f8.dir/src.c.o   -c /home/jb/Documents/Repos/SDF_path/build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_3b7f8
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_3b7f8.dir/link.txt --verbose=1
+/usr/bin/cc  -DCMAKE_HAVE_LIBC_PTHREAD -lstdc++fs    CMakeFiles/cmTC_3b7f8.dir/src.c.o  -o cmTC_3b7f8 
+/usr/bin/ld: CMakeFiles/cmTC_3b7f8.dir/src.c.o: in function `main':
 src.c:(.text+0x46): undefined reference to `pthread_create'
 /usr/bin/ld: src.c:(.text+0x52): undefined reference to `pthread_detach'
-/usr/bin/ld: src.c:(.text+0x5e): undefined reference to `pthread_cancel'
-/usr/bin/ld: src.c:(.text+0x6f): undefined reference to `pthread_join'
+/usr/bin/ld: src.c:(.text+0x63): undefined reference to `pthread_join'
 collect2: error: ld returned 1 exit status
-make[1]: *** [CMakeFiles/cmTC_7f6e4.dir/build.make:106: cmTC_7f6e4] Error 1
-make[1]: Leaving directory '/home/jb/Documents/SDF_path/build/CMakeFiles/CMakeTmp'
-make: *** [Makefile:140: cmTC_7f6e4/fast] Error 2
+make[1]: *** [CMakeFiles/cmTC_3b7f8.dir/build.make:87: cmTC_3b7f8] Error 1
+make[1]: Leaving directory '/home/jb/Documents/Repos/SDF_path/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_3b7f8/fast] Error 2
 
 
 Source file was:
@@ -32,7 +31,6 @@ int main(void)
   pthread_t thread;
   pthread_create(&thread, NULL, test_func, NULL);
   pthread_detach(thread);
-  pthread_cancel(thread);
   pthread_join(thread, NULL);
   pthread_atfork(NULL, NULL, NULL);
   pthread_exit(NULL);
@@ -41,20 +39,20 @@ int main(void)
 }
 
 Determining if the function pthread_create exists in the pthreads failed with the following output:
-Change Dir: /home/jb/Documents/SDF_path/build/CMakeFiles/CMakeTmp
+Change Dir: /home/jb/Documents/Repos/SDF_path/build/CMakeFiles/CMakeTmp
 
-Run Build Command(s):/usr/bin/make cmTC_a54ee/fast && /usr/bin/make  -f CMakeFiles/cmTC_a54ee.dir/build.make CMakeFiles/cmTC_a54ee.dir/build
-make[1]: Entering directory '/home/jb/Documents/SDF_path/build/CMakeFiles/CMakeTmp'
-Building C object CMakeFiles/cmTC_a54ee.dir/CheckFunctionExists.c.o
-/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create -lstdc++fs -o CMakeFiles/cmTC_a54ee.dir/CheckFunctionExists.c.o -c /home/jb/.local/lib/python2.7/site-packages/cmake/data/share/cmake-3.18/Modules/CheckFunctionExists.c
-Linking C executable cmTC_a54ee
-/home/jb/.local/lib/python2.7/site-packages/cmake/data/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a54ee.dir/link.txt --verbose=1
-/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=pthread_create -lstdc++fs CMakeFiles/cmTC_a54ee.dir/CheckFunctionExists.c.o -o cmTC_a54ee  -lpthreads 
+Run Build Command(s):/usr/bin/make cmTC_68d3f/fast && /usr/bin/make -f CMakeFiles/cmTC_68d3f.dir/build.make CMakeFiles/cmTC_68d3f.dir/build
+make[1]: Entering directory '/home/jb/Documents/Repos/SDF_path/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_68d3f.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -DCHECK_FUNCTION_EXISTS=pthread_create -lstdc++fs   -o CMakeFiles/cmTC_68d3f.dir/CheckFunctionExists.c.o   -c /usr/share/cmake-3.16/Modules/CheckFunctionExists.c
+Linking C executable cmTC_68d3f
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_68d3f.dir/link.txt --verbose=1
+/usr/bin/cc  -DCHECK_FUNCTION_EXISTS=pthread_create -lstdc++fs    CMakeFiles/cmTC_68d3f.dir/CheckFunctionExists.c.o  -o cmTC_68d3f  -lpthreads 
 /usr/bin/ld: cannot find -lpthreads
 collect2: error: ld returned 1 exit status
-make[1]: *** [CMakeFiles/cmTC_a54ee.dir/build.make:106: cmTC_a54ee] Error 1
-make[1]: Leaving directory '/home/jb/Documents/SDF_path/build/CMakeFiles/CMakeTmp'
-make: *** [Makefile:140: cmTC_a54ee/fast] Error 2
+make[1]: *** [CMakeFiles/cmTC_68d3f.dir/build.make:87: cmTC_68d3f] Error 1
+make[1]: Leaving directory '/home/jb/Documents/Repos/SDF_path/build/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_68d3f/fast] Error 2
 
 
 
