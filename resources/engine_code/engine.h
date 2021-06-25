@@ -77,7 +77,7 @@ private:
 	// float rotation_about_y = -0.63;
 	// float rotation_about_z = 1.38;
 // second scene
-	float rotation_about_x = 0.4;
+	float rotation_about_x = 0.392;
 	float rotation_about_y = -0.2;
 	float rotation_about_z = 0.;
 
@@ -141,7 +141,8 @@ private:
 	// glm::vec3 position = glm::vec3(0.496222, -0.595141, -2.119943);
 // second arrangment
 // glm::vec3 position = glm::vec3(-1.709170, 0.093756, -1.045113);
-	glm::vec3 position = glm::vec3(0.3, 0.78, -1.44);
+	// glm::vec3 position = glm::vec3(0.3, 0.78, -1.44);
+	glm::vec3 position = glm::vec3(0.144, 0.3, -0.67);
 
 	glm::vec3 basis_x, basis_y, basis_z;
 

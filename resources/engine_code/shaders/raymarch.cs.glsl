@@ -13,7 +13,7 @@ layout( binding = 3 ) uniform sampler2D blue_noise_dither_pattern;
 #define MAX_DIST  18.
 #define EPSILON   0.0001 // closest surface distance
 
-#define MAX_BOUNCES 8
+#define MAX_BOUNCES 10
 
 #define AA 2
 
@@ -1624,22 +1624,118 @@ float deer(vec3 p) {
 }
 
 float derp(vec3 p){
-    p.z-=1.5;
-    vec3 q=p;
-    float s=1.5;
-    float e=0.;
-    for(int j=0;j++<8;s*=e)
-        p=sign(p)*(1.2-abs(p-1.2)),
-        p=p*(e=8./clamp(dot(p,p),.6,5.5))+q-vec3(.3,8,.3);
-    return length(p)/s;
+   const float mr=0.25, mxr=1.0;
+    const vec4 scale=vec4(-3.12,-3.12,-3.12,3.12),p0=vec4(0.0,1.59,-1.0,0.0);
+    vec4 z = vec4(p,1.0);
+    for (int n = 0; n < 3; n++) {
+        z.xyz=clamp(z.xyz, -0.94, 0.94)*2.0-z.xyz;
+        z*=scale/clamp(dot(z.xyz,z.xyz),mr,mxr);
+        z+=p0;
+    }
+    z.y-=3.0*sin(3.0+floor(p.x+0.5)+floor(p.z+0.5));
+    float dS=(length(max(abs(z.xyz)-vec3(1.2,49.0,1.4),0.0))-0.06)/z.w;
+    return dS;
 }
+
+float sde(vec3 p) {
+    const vec3 va = vec3(  0.0,  0.57735,  0.0 );
+    const vec3 vb = vec3(  0.0, -1.0,  1.15470 );
+    const vec3 vc = vec3(  1.0, -1.0, -0.57735 );
+    const vec3 vd = vec3( -1.0, -1.0, -0.57735 );
+    float a = 0.0;
+    float s = 1.0;
+    float r = 1.0;
+    float dm;
+    vec3 v;
+    for(int i=0; i<16; i++) {
+        float d, t;
+        d = dot(p-va,p-va);              v=va; dm=d; t=0.0;
+        d = dot(p-vb,p-vb); if( d < dm ) { v=vb; dm=d; t=1.0; }
+        d = dot(p-vc,p-vc); if( d < dm ) { v=vc; dm=d; t=2.0; }
+        d = dot(p-vd,p-vd); if( d < dm ) { v=vd; dm=d; t=3.0; }
+        p = v + 2.0*(p - v); r*= 2.0;
+        a = t + 4.0*a; s*= 4.0;
+    }
+    return (sqrt(dm)-1.0)/r;
+}
+
+float ddde(vec3 pos) {
+    vec3 tpos=pos;
+    tpos.xz=abs(.5-mod(tpos.xz,1.));
+    vec4 p=vec4(tpos,1.);
+    float y=max(0.,.35-abs(pos.y-3.35))/.35;
+    for (int i=0; i<7; i++) {
+        p.xyz = abs(p.xyz)-vec3(-0.02,1.98,-0.02);
+        p=p*(2.0+0.*y)/clamp(dot(p.xyz,p.xyz),.4,1.)-vec4(0.5,1.,0.4,0.);
+        p.xz*=mat2(-0.416,-0.91,0.91,-0.416);
+    }
+    return (length(max(abs(p.xyz)-vec3(0.1,5.0,0.1),vec3(0.0)))-0.05)/p.w;
+}
+
+
+
+mat2 rot(float r){
+  vec2 s = vec2(cos(r),sin(r));
+  return mat2(s.x,s.y,-s.y,s.x);
+}
+float cube(vec3 p,vec3 s){
+  vec3 q = abs(p);
+  vec3 m = max(s-q,0.);
+  return length(max(q-s,0.))-min(min(m.x,m.y),m.z);
+}
+float tetcol(vec3 p,vec3 offset,float scale,vec3 col){
+  vec4 z = vec4(p,1.);
+  for(int i = 0;i<12;i++){
+    if(z.x+z.y<0.0)z.xy = -z.yx,col.z+=1.;
+    if(z.x+z.z<0.0)z.xz = -z.zx,col.y+=1.;
+    if(z.z+z.y<0.0)z.zy = -z.yz,col.x+=1.;
+    z *= scale;
+    z.xyz += offset*(1.0-scale);
+  }
+  return (cube(z.xyz,vec3(1.5)))/z.w;
+}
+float ssde(vec3 p){
+  float s = 1.;
+  p = abs(p)-4.*s;
+  p = abs(p)-2.*s;
+  p = abs(p)-1.*s;
+  return tetcol(p,vec3(1),1.8,vec3(0.));
+}
+
+
+
+float lens_de(vec3 p){
+    float dfinal;
+
+    float radius1 = 1.;
+    float radius2 = 20.;
+
+    float thickness = 0.2;
+
+    float center1 = radius1 - thickness/2.;
+    float center2 = - radius2 + thickness/2;
+
+    vec3 prot = rotate3D(0.9, vec3(1.))*p;
+
+    float sphere1 = distance(prot, vec3(0,center1,0)) - radius1;
+    float sphere2 = distance(prot, vec3(0,center2,0)) - radius2;
+    
+    // dfinal = fOpIntersectionRound(sphere1, sphere2, 0.01); 
+    dfinal = max(sphere1, sphere2); 
+    
+    return dfinal;
+}
+
+bool refractive_hit = false;
+
 float de(vec3 p){
 
     vec3 porig = p;
     current_emission = vec3(0.);
     albedo = basic_diffuse;
 
-
+    refractive_hit = false;
+    
 		float box_size = 0.65;
 
 		float top_and_bottom = min(fPlane(p, vec3(0,1,0), box_size), fPlane(p, vec3(0,-1,0), box_size));
@@ -1661,38 +1757,36 @@ float de(vec3 p){
 
 		float center_box = fBox(p, boxsize);
 
-		center_box = max(center_box, -(distance(porig.xz, vec2(0))-0.25));
+		center_box = max(center_box, -(distance(porig.xz, vec2(0))-0.35));
 
-		float icosa = max(fIcosahedron(p, 0.3), 0.02*derp(50.*p));
+		// float icosa = max(fIcosahedron(p, 0.3), 0.02*ssde(50.*p));
+		float lens_distance = lens_de(p*5.)/5.; // if inside, consider the negative
 
 		pModInterval1(p.x, 0.1, -5., 5.);
-		// pModInterval1(p.y, 0.05, -5., 5.);
-		// pModInterval1(p.z, 0.05, -5., 5.);
 
-
-		float light_box = max(fBox(p, vec3(0.0004, 5., 5.)), icosa);
+		// float light_box = min(max(fBox(p, vec3(0.0004, 5., 5.)), icosa), sde(p));
 
 		pModInterval1(p.y, 0.025, -50., 50.);
 		center_box = max(center_box, fBox(p, vec3(3., 0.005, 3.)));
 
 		// float focus_object = min(min(min(front_cross, back_cross), center_box), icosa);
-		float focus_object = min(center_box, icosa);
+		float focus_object = min(center_box, lens_distance);
 
 		float dfinal = min(walls_and_light, focus_object);
 
 		if(dfinal == left_wall)
 		{
-			albedo = vec3(1,0,0);
+        albedo = vec3(1,0,0);
 		}
 
 		if(dfinal == right_wall)
 		{
-			albedo = vec3(0,1,0);
+        albedo = vec3(0,1,0);
 		}
 
 		if(dfinal == back_wall)
 		{
-			albedo = vec3(1,1,0);
+        albedo = vec3(1,1,0);
 		}
 
 		if(dfinal == front_wall)
@@ -1705,14 +1799,14 @@ float de(vec3 p){
 			albedo = vec3(1,1,1);
 		}
 
-		if(dfinal == icosa)
+		if(dfinal == lens_distance)
 		{
-			albedo = vec3(1.);
-		}
-
-		if(dfinal == light_box)
-		{
-			current_emission = vec3(1., 0.7, 0.4)*80.;
+			albedo = vec3(1,0,0);
+      if(dfinal < EPSILON){
+          refractive_hit = true;
+          // current_emission = vec3(0.2,0.1,0.5)*50;
+          
+      }
 		}
 
 		if(dfinal == light)
@@ -1889,7 +1983,7 @@ vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
         ro += EPSILON * normal;
 
 
-        vec3 reflected = reflect(ro-old_ro, normal) * 25.;
+        vec3 reflected = reflect(ro-old_ro, normal) * 2.;
         vec3 temp = mix(reflected, RandomUnitVector(), 0.6);
         vec3 randomvector = normalize((1.+EPSILON)*normal + temp);
 
