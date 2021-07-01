@@ -466,33 +466,43 @@ void engine::control_window()
 
   if(ImGui::BeginTabItem("Raymarcher Controls"))
   {
-    ImGui::Text("");
-    ImGui::ColorEdit3("Basic Diffuse", (float*)&basic_diffuse);
-    ImGui::Text("");
-    ImGui::Text("Lights");
-    ImGui::ColorEdit3("Light 1 Diffuse", (float*)&lightCol1d);
-    ImGui::ColorEdit3("Light 1 Specular", (float*)&lightCol1s);
-    ImGui::SliderFloat("Light 1 Spec Power", &specpower1, 0.1, 200.0);
-    ImGui::SliderFloat("Light 1 Shadow Sharpness", &shadow1, 0.1, 100.0);
-    ImGui::Text("");
-    ImGui::SliderFloat("Light 1 Orbit Radius", &orbit1, 0.1, 100.0);
-    // what should the visibility only/phong switcher look like?
-    ImGui::Text("");
-    ImGui::ColorEdit3("Light 2 Diffuse", (float*)&lightCol2d);
-    ImGui::ColorEdit3("Light 2 Specular", (float*)&lightCol2s);
-    ImGui::SliderFloat("Light 2 Spec Power", &specpower2, 0.1, 200.0);
-    ImGui::SliderFloat("Light 2 Shadow Sharpness", &shadow2, 0.1, 100.0);
-    ImGui::Text("");
-    ImGui::SliderFloat("Light 2 Orbit Radius", &orbit2, 0.1, 100.0);
-    ImGui::Text("");
-    ImGui::ColorEdit3("Light 3 Diffuse", (float*)&lightCol3d);
-    ImGui::ColorEdit3("Light 3 Specular", (float*)&lightCol3s);
-    ImGui::SliderFloat("Light 3 Spec Power", &specpower3, 0.1, 200.0);
-    ImGui::SliderFloat("Light 3 Shadow Sharpness", &shadow3, 0.1, 100.0);
-    ImGui::Text("");
-    ImGui::SliderFloat("Light 3 Orbit Radius", &orbit3, 0.1, 100.0);
-    ImGui::Text("");
+    // ImGui::Text("");
+    // ImGui::ColorEdit3("Basic Diffuse", (float*)&basic_diffuse);
+    // ImGui::Text("");
+    // ImGui::Text("Lights");
+    // ImGui::ColorEdit3("Light 1 Diffuse", (float*)&lightCol1d);
+    // ImGui::ColorEdit3("Light 1 Specular", (float*)&lightCol1s);
+    // ImGui::SliderFloat("Light 1 Spec Power", &specpower1, 0.1, 200.0);
+    // ImGui::SliderFloat("Light 1 Shadow Sharpness", &shadow1, 0.1, 100.0);
+    // ImGui::Text("");
+    // ImGui::SliderFloat("Light 1 Orbit Radius", &orbit1, 0.1, 100.0);
+    // // what should the visibility only/phong switcher look like?
+    // ImGui::Text("");
+    // ImGui::ColorEdit3("Light 2 Diffuse", (float*)&lightCol2d);
+    // ImGui::ColorEdit3("Light 2 Specular", (float*)&lightCol2s);
+    // ImGui::SliderFloat("Light 2 Spec Power", &specpower2, 0.1, 200.0);
+    // ImGui::SliderFloat("Light 2 Shadow Sharpness", &shadow2, 0.1, 100.0);
+    // ImGui::Text("");
+    // ImGui::SliderFloat("Light 2 Orbit Radius", &orbit2, 0.1, 100.0);
+    // ImGui::Text("");
+    // ImGui::ColorEdit3("Light 3 Diffuse", (float*)&lightCol3d);
+    // ImGui::ColorEdit3("Light 3 Specular", (float*)&lightCol3s);
+    // ImGui::SliderFloat("Light 3 Spec Power", &specpower3, 0.1, 200.0);
+    // ImGui::SliderFloat("Light 3 Shadow Sharpness", &shadow3, 0.1, 100.0);
+    // ImGui::Text("");
+    // ImGui::SliderFloat("Light 3 Orbit Radius", &orbit3, 0.1, 100.0);
+    // ImGui::Text("");
 
+
+
+    ImGui::Text("");
+    ImGui::SliderFloat("lens scale", &lens_scale_factor, 0.1, 10.0);
+    ImGui::SliderFloat("lens radius 1", &lens_radius_1, 0.1, 100.0);
+    ImGui::SliderFloat("lens radius 2", &lens_radius_2, 0.1, 100.0);
+    ImGui::SliderFloat("lens thickness", &lens_thickness, 0.1, 10.0);
+    ImGui::SliderFloat("lens rotate", &lens_rotate, 0.1, 100.0);
+
+    
     ImGui::EndTabItem();
   }
   if(ImGui::BeginTabItem("Render Settings"))
@@ -500,13 +510,19 @@ void engine::control_window()
     ImGui::Text("");
     ImGui::SliderFloat(" FoV ", &fov, 0.001, 4.);
     ImGui::Text("");
+    ImGui::SliderFloat(" position jitter ", &jitterfactor, 0.001, 0.25);
+    ImGui::Text("");
+    ImGui::SliderFloat(" focus distance ", &focusdistance, 0.001, 5.);
+    ImGui::Text("");
+    ImGui::SliderFloat(" exposure ", &exposure, 0.001, 4.);
+    ImGui::Text("");
     ImGui::ColorEdit3("Fog Color", (float*)&clear_color);
     ImGui::Text("");
 
     // fog terms
-    ImGui::SliderFloat(" Depth Scale ", &depth_scale, 0.001, 4.);
+    ImGui::SliderFloat(" Depth Scale ", &depth_scale, 0.001, 40.);
 
-    const char* dmodes[] = {"1", "2", "3", "EXP1", "EXP2", "EXP3", "EXP4", "POW1", "POW2", "POW3", "BASIC RATIO"};
+    const char* dmodes[] = {"1", "2", "3", "EXP1", "EXP2", "EXP3", "EXP4", "POW1", "POW2", "POW3", "SIGMOID", "BASIC RATIO"};
     ImGui::Combo("Depth Falloff", &depth_selector, dmodes, IM_ARRAYSIZE(dmodes));
 
     // ao scale
@@ -717,6 +733,18 @@ void engine::draw_everything() {
 
     // gamma correction
     glUniform1f(glGetUniformLocation(raymarch_shader, "gamma"), gamma_correction);
+    // exposure
+    glUniform1f(glGetUniformLocation(raymarch_shader, "exposure"), exposure);
+
+    // lens shape
+    glUniform1f(glGetUniformLocation(raymarch_shader, "lens_scale_factor"), lens_scale_factor);
+    glUniform1f(glGetUniformLocation(raymarch_shader, "lens_radius_1"), lens_radius_1);
+    glUniform1f(glGetUniformLocation(raymarch_shader, "lens_radius_2"), lens_radius_2);
+    glUniform1f(glGetUniformLocation(raymarch_shader, "lens_thickness"), lens_thickness);
+    glUniform1f(glGetUniformLocation(raymarch_shader, "lens_rotate"), lens_rotate);
+    
+    glUniform1f(glGetUniformLocation(raymarch_shader, "jitterfactor"), jitterfactor);
+    glUniform1f(glGetUniformLocation(raymarch_shader, "focusdistance"), focusdistance);
 
     // send light information to the raymarch shader
     // animate light parameters

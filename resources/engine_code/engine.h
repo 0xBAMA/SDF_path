@@ -77,9 +77,9 @@ private:
 	// float rotation_about_y = -0.63;
 	// float rotation_about_z = 1.38;
 // second scene
-	float rotation_about_x = 0.392;
-	float rotation_about_y = -0.2;
-	float rotation_about_z = 0.;
+	float rotation_about_x = 0.572;
+	float rotation_about_y = -0.004;
+	float rotation_about_z = -0.016;
 
 	// base color
 	glm::vec3 basic_diffuse = glm::vec3(187./255., 135./255., 45./255.);
@@ -127,13 +127,25 @@ private:
     glm::vec3 lightPos2 = glm::vec3( 0., 0.04, 0.1);
     glm::vec3 lightPos3 = glm::vec3( 0., 0., 0.1);
 
+		// lens parameters
+		float lens_scale_factor = 2.618;
+		float lens_radius_1 = 1.;
+		float lens_radius_2 = 20.;
+		float lens_thickness = 0.2;
+		float lens_rotate = 31.0;
+
+		float jitterfactor = 0.02;
+		float focusdistance = 0.45;
+		float exposure = 1.0;
+
+		
 	float AO_scale = 1.;
 	float depth_scale = 1.;
-	int depth_selector = 8;
+	int depth_selector = 10;
 
 	int sample_counter = 0;
 
-	float fov = 0.164;
+	float fov = 0.382;
 	// float fov = 1.;
 
 	// position
@@ -142,7 +154,7 @@ private:
 // second arrangment
 // glm::vec3 position = glm::vec3(-1.709170, 0.093756, -1.045113);
 	// glm::vec3 position = glm::vec3(0.3, 0.78, -1.44);
-	glm::vec3 position = glm::vec3(0.144, 0.3, -0.67);
+	glm::vec3 position = glm::vec3(-0.038, 0.32, -0.45);
 
 	glm::vec3 basis_x, basis_y, basis_z;
 

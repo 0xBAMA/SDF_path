@@ -24,10 +24,24 @@ uniform vec3 sky_color;
 
 uniform int tonemap_mode;
 uniform float gamma;
+uniform float exposure;
 
 uniform vec3 lightPos1;
 uniform vec3 lightPos2;
 uniform vec3 lightPos3;
+
+
+// lens controls
+uniform float lens_scale_factor;
+uniform float lens_radius_1;
+uniform float lens_radius_2;
+uniform float lens_thickness;
+uniform float lens_rotate;
+
+uniform float jitterfactor;
+uniform float focusdistance;
+
+
 
 // flicker factors
 uniform float flickerfactor1;
@@ -1705,28 +1719,149 @@ float ssde(vec3 p){
 
 
 float lens_de(vec3 p){
+    
+    // scaling
+    p *= lens_scale_factor;
     float dfinal;
 
-    float radius1 = 1.;
-    float radius2 = 20.;
+    float radius1 = lens_radius_1;
+    float radius2 = lens_radius_2;
 
-    float thickness = 0.2;
+    float thickness = lens_thickness;
 
     float center1 = radius1 - thickness/2.;
     float center2 = - radius2 + thickness/2;
 
-    vec3 prot = rotate3D(0.9, vec3(1.))*p;
+    vec3 prot = rotate3D(0.1*lens_rotate, vec3(1.))*p;
 
     float sphere1 = distance(prot, vec3(0,center1,0)) - radius1;
     float sphere2 = distance(prot, vec3(0,center2,0)) - radius2;
     
     // dfinal = fOpIntersectionRound(sphere1, sphere2, 0.01); 
-    dfinal = max(sphere1, sphere2); 
+    dfinal = fOpIntersectionChamfer(sphere1, sphere2, 0.01); 
+    // dfinal = max(sphere1, sphere2); 
     
-    return dfinal;
+    return dfinal/lens_scale_factor;
 }
 
 bool refractive_hit = false;
+
+
+float fffde( vec3 p ){
+  p = p.xzy;
+  vec3 cSize = vec3(1., 1., 1.3);
+  float scale = 1.;
+  for( int i=0; i < 12;i++ ){
+    p = 2.0*clamp(p, -cSize, cSize) - p;
+    float r2 = dot(p,p+sin(p.z*.3));
+    float k = max((2.)/(r2), .027);
+    p *= k;  scale *= k;
+  }
+  float l = length(p.xy);
+  float rxy = l - 4.0;
+  float n = l * p.z;
+  rxy = max(rxy, -(n) / 4.);
+  return (rxy) / abs(scale);
+}
+
+float ffffde(vec3 p){
+    float s=2., l=0.;
+    p=abs(p);
+    for(int j=0;j++<8;)
+        p=-sign(p)*(abs(abs(abs(p)-2.)-1.)-1.),
+        p*=l=-1.3/dot(p,p),
+        p-=.15, s*=l;
+    return length(p)/s;
+}
+
+
+
+float fssde(vec3 p){
+    const int iterations = 20;
+    float d = -2.; // vary this parameter, range is like -20 to 20
+    p=p.yxz;
+    pR(p.yz, 1.570795);
+    p.x += 6.5;
+    p.yz = mod(abs(p.yz)-.0, 20.) - 10.;
+    float scale = 1.25;
+    p.xy /= (1.+d*d*0.0005);
+    
+    float l = 0.;
+    for (int i=0; i < iterations; i++) {
+        p.xy = abs(p.xy);
+        p = p*scale + vec3(-3. + d*0.0095,-1.5,-.5);
+        pR(p.xy,0.35-d*0.015);
+        pR(p.yz,0.5+d*0.02);
+        vec3 p6 = p*p*p; p6=p6*p6;
+        l =pow(p6.x + p6.y + p6.z, 1./6.);
+    }
+    return l*pow(scale, -float(iterations))-.15;
+}
+
+vec2 Rot2D (vec2 q, float a)
+{
+  vec2 cs;
+  cs = sin (a + vec2 (0.5 * M_PI, 0.));
+  return vec2 (dot (q, vec2 (cs.x, - cs.y)), dot (q.yx, cs));
+}
+float PrBoxDf (vec3 p, vec3 b)
+{
+  vec3 d;
+  d = abs (p) - b;
+  return min (max (d.x, max (d.y, d.z)), 0.) + length (max (d, 0.));
+}
+float wde(vec3 p)
+{
+    vec3  di = abs(p) - vec3(1.);
+    float mc = max(di.x, max(di.y, di.z));
+    float d =  min(mc,length(max(di,0.0)));
+    vec4 res = vec4( d, 1.0, 0.0, 0.0 );
+
+    const mat3 ma = mat3( 0.60, 0.00,  0.80,
+                          0.00, 1.00,  0.00,
+                          -0.20, 0.00,  0.30 );
+    float off = 0.0005;
+    float s = 1.0;
+    for( int m=0; m<4; m++ ){
+        p = ma*(p+off);
+        vec3 a = mod( p*s, 2.0 )-1.0;
+        s *= 3.0;
+        vec3 r = abs(1.0 - 3.0*abs(a));
+        float da = max(r.x,r.y);
+        float db = max(r.y,r.z);
+        float dc = max(r.z,r.x);
+        float c = (min(da,min(db,dc))-1.0)/s;
+        if( c > d )
+            d = c;
+    }
+    return d;
+}
+
+
+void ry(inout vec3 p, float a){  
+    float c,s;vec3 q=p;  
+    c = cos(a); s = sin(a);  
+    p.x = c * q.x + s * q.z;  
+    p.z = -s * q.x + c * q.z; 
+}  
+float menger_spone(in vec3 z0){
+    z0=z0.yzx;
+    vec4 z=vec4(z0,1.0);
+    vec3 offset =0.83*normalize(vec3(3.4,2., .2));
+    float scale = 2.;
+    for (int n = 0; n < 8; n++) {
+        z = abs(z);
+        ry(z.xyz, 1.5);
+        if (z.x < z.y)z.xy = z.yx;
+        if (z.x < z.z)z.xz = z.zx;
+        if (z.y < z.z)z.yz = z.zy;
+        ry(z.xyz, -1.21);
+        z = z*scale;
+        z.xyz -= offset*(scale-1.0);
+    }
+    return (length(max(abs(z.xyz)-vec3(1.0),0.0))-0.01)/z.w;
+}
+
 
 float de(vec3 p){
 
@@ -1742,7 +1877,11 @@ float de(vec3 p){
 		float left_wall = fPlane(p, vec3(1,0,0), box_size);
 		float right_wall = fPlane(p, vec3(-1,0,0), box_size);
 		float back_wall = fPlane(p, vec3(0,0,-1), box_size);
-		float front_wall = min(fPlane(p, vec3(0,0,1), 1.5*box_size), min(.65-length(fract(p+.5)-.5),p.y+.2));
+		// float front_wall = min(fPlane(p, vec3(0,0,1), 1.5*box_size), min(.65-length(fract(p+.5)-.5),p.y+.2));
+		// float front_wall = fPlane(p, vec3(0,0,1), 1.5*box_size);
+		// float front_wall = wde(p*5.)/5.;
+		float front_wall = menger_spone((p+vec3(0.3,0,0))*5.)/5.;
+		// float front_wall = fssde(p*35.)/35.;
 
 		float top_bottom_back = min(top_and_bottom, back_wall);
 
@@ -1760,7 +1899,7 @@ float de(vec3 p){
 		center_box = max(center_box, -(distance(porig.xz, vec2(0))-0.35));
 
 		// float icosa = max(fIcosahedron(p, 0.3), 0.02*ssde(50.*p));
-		float lens_distance = lens_de(p*5.)/5.; // if inside, consider the negative
+		float lens_distance = lens_de(p); // if inside, consider the negative
 
 		pModInterval1(p.x, 0.1, -5., 5.);
 
@@ -1791,7 +1930,8 @@ float de(vec3 p){
 
 		if(dfinal == front_wall)
 		{
-			albedo = vec3(0,0,1);
+			albedo = vec3(0.8,0.514,0.27);
+      current_emission = vec3(0.1618);
 		}
 
 		if(dfinal == top_and_bottom)
@@ -1801,17 +1941,16 @@ float de(vec3 p){
 
 		if(dfinal == lens_distance)
 		{
-			albedo = vec3(1,0,0);
+			albedo = vec3(1,1,1);
       if(dfinal < EPSILON){
           refractive_hit = true;
           // current_emission = vec3(0.2,0.1,0.5)*50;
-          
       }
 		}
 
 		if(dfinal == light)
 		{
-			current_emission = vec3(1., 0.9, 0.8)*100.;
+			current_emission = vec3(1., 0.9, 0.8)*600.;
 			// albedo = vec3(1.);
 		}
 		return dfinal;
@@ -1827,20 +1966,22 @@ float de(vec3 p){
 uint num_steps = 0; // how many steps taken by the raymarch function
 float dmin = 1e10; // minimum distance initially large
 
+float side = 1.; // +1 is outside, -1 is inside object - used for refraction
+
 // raymarches to the next hit
 float raymarch(vec3 ro, vec3 rd) {
     float d0 = 0.0, d1 = 0.0;
     for(int i = 0; i < MAX_STEPS; i++) {
         vec3 p = ro + rd * d0;      // point for distance query from parametric form
-        d1 = de(p); d0 += d1;       // increment distance by de evaluated at p
+        d1 = side*de(p); d0 += d1;  // increment distance by de evaluated at p
         dmin = min( dmin, d1);      // tracking minimum distance
         num_steps++;                // increment step count
-        if(d0 > MAX_DIST || d1 < EPSILON || i == (MAX_STEPS-1)) return d0; // return the final ray distance
+        if(d0 > MAX_DIST || abs(d1) < EPSILON || i == (MAX_STEPS-1)) return d0; // return the final ray distance
     }
 }
 
 vec3 norm(vec3 p) { // to get the normal vector for a point in space, this function evaluates the gradient of the distance function
-#define METHOD 1
+#define METHOD 0
 #if METHOD == 0
     // tetrahedron version, unknown source - 4 evaluations
     vec2 e = vec2(1,-1) * EPSILON;
@@ -1958,9 +2099,7 @@ vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
     // float dresult = raymarch(ro, rd);
     // float escape_result = escape;
 
-
     // so first hit location is known in hitpos, and surface normal at that point in the normal
-
 
     vec3 final_color = vec3(0.);
     vec3 throughput = vec3(1.);
@@ -1983,13 +2122,13 @@ vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
         ro += EPSILON * normal;
 
 
-        vec3 reflected = reflect(ro-old_ro, normal) * 2.;
-        vec3 temp = mix(reflected, RandomUnitVector(), 0.6);
-        vec3 randomvector = normalize((1.+EPSILON)*normal + temp);
+        vec3 reflected = reflect(ro-old_ro, normal) * 500.;
+        vec3 temp = mix(reflected, RandomUnitVector(), 0.75);
+        vec3 randomvector_specular = normalize((1.+EPSILON)*normal + temp);
 
-        // vec3 randomvector = normalize((1.+EPSILON)*normal + RandomUnitVector());
+        vec3 randomvector_diffuse = normalize((1.+EPSILON)*normal + RandomUnitVector());
 
-        rd = randomvector;
+        rd = mix(randomvector_diffuse, randomvector_specular, albedo.r);
 
 
         final_color += throughput*current_emission;
@@ -2093,18 +2232,35 @@ void main()
     for(int x = 0; x < AA; x++)
     for(int y = 0; y < AA; y++)
     {
-        vec2 offset = vec2(float(x), float(y)) / float(AA) - 0.5;
+
+        vec2 offset = vec2(float(x+RandomFloat01()), float(y+RandomFloat01())) / float(AA) - 0.5;
 
         vec2 pixcoord = (vec2(global_loc.xy + offset)-vec2(imageSize(current)/2.)) / vec2(imageSize(current)/2.);
         vec3 ro = ray_origin;
 
         // ray gen
         float aspect_ratio = float(dimensions.x) / float(dimensions.y);
-        vec3 rd = normalize(aspect_ratio*pixcoord.x*basis_x + pixcoord.y*basis_y + (1./fov)*basis_z);
+        vec3 rd = normalize(aspect_ratio*pixcoord.x*basis_x +
+                            pixcoord.y*basis_y +
+                            // (1./fov)*basis_z*((1.-jitterfactor/2.)+jitterfactor*RandomFloat01()));
+                            (1./fov)*basis_z);
 
+        // DoF adjust - more correct version - hard to control
+        vec3 focuspoint = ro+((rd*focusdistance) / dot(rd, basis_z));
+        vec2 disk = RandomInUnitDisk().xy;
+        ro += disk.x*jitterfactor*basis_x + disk.y*jitterfactor*basis_y + jitterfactor*RandomFloat01()*basis_z;
+        rd = normalize(focuspoint - ro);
+
+        // original method
+        // vec3 focuspoint = ro+((rd*focusdistance) / dot(rd, basis_z));
+        // ro += jitterfactor*RandomFloat01()*basis_z;
+        // rd = normalize(focuspoint - ro);
+        
+        dresult_avg += raymarch(ro, rd);
+        
+        
         // color the ray
         col.rgb += get_color_for_ray(ro, rd);
-        // float dresult = raymarch(ro, rd);
 
         // vec3 hitpos = ro+dresult*rd;
         // vec3 normal = norm(hitpos);
@@ -2123,9 +2279,12 @@ void main()
 
         // col.rgb *= ((1./AO_scale) * calcAO(shadow_ro, normal)); // ambient occlusion calculation
 
+        }
+    
+        col.rgb /= float(AA*AA);
 
-       // compute the depth scale term
-        // float depth_term = dresult * depth_scale;
+        // // compute the depth scale term
+        // float depth_term = dresult_avg * depth_scale;
         // switch(depth_falloff)
         // {
         //     case 0: depth_term = 0.;
@@ -2141,14 +2300,59 @@ void main()
         //     case 8: depth_term = (sqrt(depth_term)/8.) * depth_term; break;
         //     case 9: depth_term = sqrt(depth_term/9.); break;
         //     case 10: depth_term = pow(depth_term/10., 2.); break;
-        //     case 11: depth_term = dresult/MAX_DIST;
+        //     case 11: depth_term = depth_term/MAX_DIST;
         //     default: break;
         // }
         // // do a mix here, between col and the fog color, with the selected depth falloff term
         // col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
-        }
-        col.rgb /= float(AA*AA);
 
+        float depth_term; 
+
+        switch(depth_falloff)
+        {
+            case 0: depth_term = 2.-2.*(1./(1.-dresult_avg));
+                col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
+                break;
+            case 1: depth_term = 1.-(1./(1+0.1*dresult_avg*dresult_avg));
+                col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
+                break;
+            case 2: depth_term = (1-pow(dresult_avg/30., 1.618));
+                col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
+                break;
+
+            case 3: depth_term = clamp(exp(0.25*dresult_avg-3.), 0., 10.);
+                col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
+                break;
+            case 4: depth_term = exp(0.25*dresult_avg-3.);
+                col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
+                break;
+            case 5: depth_term = exp( -0.002 * dresult_avg * dresult_avg * dresult_avg );
+                col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
+                break;
+            case 6: depth_term = exp(-0.6*max(dresult_avg-3., 0.0));
+                col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
+                break;
+    
+            case 7: depth_term = (sqrt(dresult_avg)/8.) * dresult_avg; break;
+                col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
+                break;
+            case 8: depth_term = sqrt(dresult_avg/9.); break;
+                col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
+                break;
+            case 9: depth_term = pow(dresult_avg/10., 2.); break;
+                col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
+                break;
+            case 10: col.rgb += 1./(1.+exp(-2.*(dresult_avg*0.1-2.))) * sky_color.rgb;
+                // col.rgb = mix(col.rgb, fog_color.rgb, depth_term);
+                break;
+            case 11: depth_term = dresult_avg/MAX_DIST;
+                col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
+                break;
+            default: break;
+        }
+
+        col.rgb *= exposure;
+        
         // tonemapping
         switch(tonemap_mode)
         {
