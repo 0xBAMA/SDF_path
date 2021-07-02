@@ -501,6 +501,8 @@ void engine::control_window()
     ImGui::SliderFloat("lens radius 2", &lens_radius_2, 0.1, 100.0);
     ImGui::SliderFloat("lens thickness", &lens_thickness, 0.1, 10.0);
     ImGui::SliderFloat("lens rotate", &lens_rotate, 0.1, 100.0);
+    ImGui::Text("");
+    ImGui::SliderFloat("lens IOR", &lens_ir, 0.1, 10.0);
 
     
     ImGui::EndTabItem();
@@ -743,6 +745,8 @@ void engine::draw_everything() {
     glUniform1f(glGetUniformLocation(raymarch_shader, "lens_thickness"), lens_thickness);
     glUniform1f(glGetUniformLocation(raymarch_shader, "lens_rotate"), lens_rotate);
     
+    glUniform1f(glGetUniformLocation(raymarch_shader, "lens_ir"), lens_ir);
+    
     glUniform1f(glGetUniformLocation(raymarch_shader, "jitterfactor"), jitterfactor);
     glUniform1f(glGetUniformLocation(raymarch_shader, "focusdistance"), focusdistance);
 
@@ -809,8 +813,8 @@ void engine::draw_everything() {
     if(first_time){
       first_time = false;
 
-      for(int x = 0; x < WIDTH; x+=TILESIZE){
-        for(int y = 0; y < WIDTH; y+=TILESIZE){
+      for(int y = 0; y < WIDTH; y+=TILESIZE){
+        for(int x = 0; x < WIDTH; x+=TILESIZE){
           offset o; o.x = x; o.y = y; o.touched = false;
           offsets.push_back(o);
         }

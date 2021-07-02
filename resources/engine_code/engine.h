@@ -128,11 +128,13 @@ private:
     glm::vec3 lightPos3 = glm::vec3( 0., 0., 0.1);
 
 		// lens parameters
-		float lens_scale_factor = 2.618;
+		float lens_scale_factor = 1.618;
 		float lens_radius_1 = 1.;
 		float lens_radius_2 = 20.;
 		float lens_thickness = 0.2;
 		float lens_rotate = 31.0;
+
+		float lens_ir = 1.325;
 
 		float jitterfactor = 0.02;
 		float focusdistance = 0.45;

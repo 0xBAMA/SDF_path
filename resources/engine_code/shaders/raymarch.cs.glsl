@@ -38,6 +38,8 @@ uniform float lens_radius_2;
 uniform float lens_thickness;
 uniform float lens_rotate;
 
+uniform float lens_ir;
+
 uniform float jitterfactor;
 uniform float focusdistance;
 
@@ -1718,34 +1720,6 @@ float ssde(vec3 p){
 
 
 
-float lens_de(vec3 p){
-    
-    // scaling
-    p *= lens_scale_factor;
-    float dfinal;
-
-    float radius1 = lens_radius_1;
-    float radius2 = lens_radius_2;
-
-    float thickness = lens_thickness;
-
-    float center1 = radius1 - thickness/2.;
-    float center2 = - radius2 + thickness/2;
-
-    vec3 prot = rotate3D(0.1*lens_rotate, vec3(1.))*p;
-
-    float sphere1 = distance(prot, vec3(0,center1,0)) - radius1;
-    float sphere2 = distance(prot, vec3(0,center2,0)) - radius2;
-    
-    // dfinal = fOpIntersectionRound(sphere1, sphere2, 0.01); 
-    dfinal = fOpIntersectionChamfer(sphere1, sphere2, 0.01); 
-    // dfinal = max(sphere1, sphere2); 
-    
-    return dfinal/lens_scale_factor;
-}
-
-bool refractive_hit = false;
-
 
 float fffde( vec3 p ){
   p = p.xzy;
@@ -1812,29 +1786,24 @@ float PrBoxDf (vec3 p, vec3 b)
 }
 float wde(vec3 p)
 {
-    vec3  di = abs(p) - vec3(1.);
-    float mc = max(di.x, max(di.y, di.z));
-    float d =  min(mc,length(max(di,0.0)));
-    vec4 res = vec4( d, 1.0, 0.0, 0.0 );
-
-    const mat3 ma = mat3( 0.60, 0.00,  0.80,
-                          0.00, 1.00,  0.00,
-                          -0.20, 0.00,  0.30 );
-    float off = 0.0005;
-    float s = 1.0;
-    for( int m=0; m<4; m++ ){
-        p = ma*(p+off);
-        vec3 a = mod( p*s, 2.0 )-1.0;
-        s *= 3.0;
-        vec3 r = abs(1.0 - 3.0*abs(a));
-        float da = max(r.x,r.y);
-        float db = max(r.y,r.z);
-        float dc = max(r.z,r.x);
-        float c = (min(da,min(db,dc))-1.0)/s;
-        if( c > d )
-            d = c;
-    }
-    return d;
+  vec3 b;
+  float r, a;
+  const float nIt = 5., sclFac = 2.4;
+  b = (sclFac - 1.) * vec3 (1., 1.125, 0.625);
+  r = length (p.xz);
+  a = (r > 0.) ? atan (p.z, - p.x) / (2. * M_PI) : 0.;
+  p.x = mod (16. * a + 1., 2.) - 1.;
+  p.z = r - 32. / (2. * M_PI);
+  p.yz = Rot2D (p.yz, M_PI * a);
+  for (float n = 0.; n < nIt; n ++) {
+    p = abs (p);
+    p.xy = (p.x > p.y) ? p.xy : p.yx;
+    p.xz = (p.x > p.z) ? p.xz : p.zx;
+    p.yz = (p.y > p.z) ? p.yz : p.zy;
+    p = sclFac * p - b;
+    p.z += b.z * step (p.z, -0.5 * b.z);
+  }
+  return 0.8 * PrBoxDf (p, vec3 (1.)) / pow (sclFac, nIt);
 }
 
 
@@ -1845,6 +1814,7 @@ void ry(inout vec3 p, float a){
     p.z = -s * q.x + c * q.z; 
 }  
 float menger_spone(in vec3 z0){
+    escape = 0.;
     z0=z0.yzx;
     vec4 z=vec4(z0,1.0);
     vec3 offset =0.83*normalize(vec3(3.4,2., .2));
@@ -1858,8 +1828,64 @@ float menger_spone(in vec3 z0){
         ry(z.xyz, -1.21);
         z = z*scale;
         z.xyz -= offset*(scale-1.0);
+        escape += length(z.xyz);
     }
     return (length(max(abs(z.xyz)-vec3(1.0),0.0))-0.01)/z.w;
+}
+
+
+vec4 formula(vec4 p) {
+    p.xz = abs(p.xz+1.)-abs(p.xz-1.)-p.xz;
+    p=p*2./clamp(dot(p.xyz,p.xyz),.15,1.)-vec4(0.5,0.5,0.8,0.);
+    p.xy*=rot(.5);
+    return p;
+}
+float screen(vec3 p) {
+    float d1=length(p.yz-vec2(.25,0.))-.5;	
+    float d2=length(p.yz-vec2(.25,2.))-.5;	
+    return min(max(d1,abs(p.x-.3)-.01),max(d2,abs(p.x+2.3)-.01));
+}
+float daae(vec3 pos) {
+    vec3 tpos=pos;
+    tpos.z=abs(2.-mod(tpos.z,4.));
+    vec4 p=vec4(tpos,1.5);
+    float y=max(0.,.35-abs(pos.y-3.35))/.35;
+
+    for (int i=0; i<8; i++) {p=formula(p);}
+    float fr=max(-tpos.x-4.,(length(max(vec2(0.),p.yz-3.)))/p.w);
+
+    float sc=screen(tpos);
+    return min(sc,fr);	
+}
+
+
+bool refractive_hit = false;      // this triggers the material behavior for refraction
+bool entering_refractive = false; // initially not located inside of refractive shapes - toggled on hit with lens_de
+
+float lens_de(vec3 p){
+    // scaling
+    p *= lens_scale_factor;
+    float dfinal;
+
+    float radius1 = lens_radius_1;
+    float radius2 = lens_radius_2;
+
+    float thickness = lens_thickness;
+
+    float center1 = radius1 - thickness/2.;
+    float center2 = - radius2 + thickness/2;
+
+    vec3 prot = rotate3D(0.1*lens_rotate, vec3(1.))*p;
+
+    float sphere1 = distance(prot, vec3(0,center1,0)) - radius1;
+    float sphere2 = distance(prot, vec3(0,center2,0)) - radius2;
+    
+    // dfinal = fOpIntersectionRound(sphere1, sphere2, 0.01); 
+    dfinal = fOpIntersectionChamfer(sphere1, sphere2, 0.01); 
+    // dfinal = max(sphere1, sphere2); 
+    
+    // return dfinal/lens_scale_factor;
+    return max(daae(p), dfinal/lens_scale_factor);
 }
 
 
@@ -1899,7 +1925,7 @@ float de(vec3 p){
 		center_box = max(center_box, -(distance(porig.xz, vec2(0))-0.35));
 
 		// float icosa = max(fIcosahedron(p, 0.3), 0.02*ssde(50.*p));
-		float lens_distance = lens_de(p); // if inside, consider the negative
+		float lens_distance = (entering_refractive ? -1. : 1.) * lens_de(p); // if inside, consider the negative
 
 		pModInterval1(p.x, 0.1, -5., 5.);
 
@@ -1931,7 +1957,7 @@ float de(vec3 p){
 		if(dfinal == front_wall)
 		{
 			albedo = vec3(0.8,0.514,0.27);
-      current_emission = vec3(0.1618);
+      // current_emission = max((pal( escape, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20) ))-vec3(0.,0.2*sin(escape),0.2)*cos(escape), vec3(0));
 		}
 
 		if(dfinal == top_and_bottom)
@@ -1941,17 +1967,17 @@ float de(vec3 p){
 
 		if(dfinal == lens_distance)
 		{
-			albedo = vec3(1,1,1);
+			albedo = vec3(1,0.98,0.95);
       if(dfinal < EPSILON){
           refractive_hit = true;
-          // current_emission = vec3(0.2,0.1,0.5)*50;
+          entering_refractive = !entering_refractive;
       }
 		}
 
 		if(dfinal == light)
 		{
 			current_emission = vec3(1., 0.9, 0.8)*600.;
-			// albedo = vec3(1.);
+			albedo = vec3(1.);
 		}
 		return dfinal;
 
@@ -2000,6 +2026,31 @@ vec3 norm(vec3 p) { // to get the normal vector for a point in space, this funct
                           de(p+eps.yxy) - de(p-eps.yxy),
                           de(p+eps.yyx) - de(p-eps.yyx)));
 #endif
+}
+
+vec3 lens_norm(vec3 p){
+#if METHOD == 0
+    // tetrahedron version, unknown source - 4 evaluations
+    vec2 e = vec2(1,-1) * EPSILON;
+    return normalize(e.xyy*lens_de(p+e.xyy)+e.yyx*lens_de(p+e.yyx)+e.yxy*lens_de(p+e.yxy)+e.xxx*lens_de(p+e.xxx));
+
+#elif METHOD == 1
+    // by iq = more efficient, 4 evaluations
+    vec2 e = vec2( EPSILON, 0.); // computes the gradient of the estimator function
+    return normalize( vec3(lens_de(p)) - vec3( lens_de(p-e.xyy), lens_de(p-e.yxy), lens_de(p-e.yyx) ));
+
+#elif METHOD == 2
+    // by iq - less efficient, 6 evaluations
+    vec3 eps = vec3(EPSILON,0.0,0.0);
+    return normalize( vec3(
+                          lens_de(p+eps.xyy) - lens_de(p-eps.xyy),
+                          lens_de(p+eps.yxy) - lens_de(p-eps.yxy),
+                          lens_de(p+eps.yyx) - lens_de(p-eps.yyx)));
+#endif
+}
+
+void lens_normal_adjust(inout vec3 p){
+    p += (entering_refractive ? -2. : 2. ) * lens_norm(p) * EPSILON;  
 }
 
 
@@ -2090,7 +2141,12 @@ vec3 RandomInUnitDisk(){
     return vec3(RandomUnitVector().xy, 0.);
 }
 
-
+float reflectance(float cosine, float ref_idx) {
+    // Use Schlick's approximation for reflectance.
+    float r0 = (1-ref_idx) / (1+ref_idx);
+    r0 = r0*r0;
+    return r0 + (1-r0)*pow((1 - cosine),5);
+}
 
 vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
     escape = 0.;
@@ -2107,36 +2163,58 @@ vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
         escape = 0.;
         float dresult = raymarch(ro, rd);
         float escape_result = escape;
-
-        if(dresult >= MAX_DIST){
-            final_color += throughput*sky_color;
-            break;
-        }
-
+        
+        // cache old ro, compute new ray origin
         vec3 old_ro = ro;
-
         ro = ro+dresult*rd;
 
 
-        vec3 normal = norm(ro);
-        ro += EPSILON * normal;
+        if(refractive_hit)
+        {
+            // vec3 normal = norm(ro);
+            vec3 normal = lens_norm(ro) * (entering_refractive ? 1 : -1);
+            vec3 unit_direction = normalize(ro-old_ro);
+            
+            lens_normal_adjust(ro); // bump away from surface hit
+            float refraction_ratio = entering_refractive ? 1./lens_ir : lens_ir; // entering or leaving
 
+            float cos_theta = min(dot(-unit_direction, normal), 1.0);
+            float sin_theta = sqrt(1.0 - cos_theta*cos_theta);
+            
+            // accounting for TIR effects
+            bool cannot_refract = refraction_ratio * sin_theta > 1.0;
+            if (cannot_refract || reflectance(cos_theta, refraction_ratio) > RandomFloat01())
+                rd = reflect(unit_direction, normal);
+            else
+                rd = refract(unit_direction, normal, refraction_ratio);
+        }
+        else
+        { // other material behaviors
 
-        vec3 reflected = reflect(ro-old_ro, normal) * 500.;
-        vec3 temp = mix(reflected, RandomUnitVector(), 0.75);
-        vec3 randomvector_specular = normalize((1.+EPSILON)*normal + temp);
+            // get normal and bump off surface to avoid self intersection 
+            vec3 normal = norm(ro);
+            ro += 2. * EPSILON * normal;
+        
+            vec3 reflected = reflect(ro-old_ro, normal);
+            vec3 temp = mix(reflected, RandomUnitVector(), 0.8);
+            vec3 randomvector_specular = normalize((1.+EPSILON)*normal + temp);
+            vec3 randomvector_diffuse  = normalize((1.+EPSILON)*normal + RandomUnitVector());
 
-        vec3 randomvector_diffuse = normalize((1.+EPSILON)*normal + RandomUnitVector());
+            rd = mix(randomvector_diffuse, randomvector_specular, 0.2);
 
-        rd = mix(randomvector_diffuse, randomvector_specular, albedo.r);
+            final_color += throughput*current_emission;
+            throughput *= albedo;
+            // throughput *= (albedo/3.14159)*dot(rd,normal);
 
+            // russian roulette - chance to quit early
+            float p = max(throughput.r, max(throughput.g, throughput.b));
+            if(RandomFloat01() > p)
+                break;
+            // add to compensate for energy lost by randomly terminating paths
+            throughput *= 1. / p;
 
-        final_color += throughput*current_emission;
-        // throughput *= (albedo/3.14159)*dot(rd,normal);
-        throughput *= albedo;
+        }
 
-
-        // if( current_emission.x > 0. || current_emission.y > 0. || current_emission.z > 0. ) break; // if you hit a light, escape
     }
 
     return final_color;
