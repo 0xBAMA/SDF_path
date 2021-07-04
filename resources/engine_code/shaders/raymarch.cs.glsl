@@ -9,15 +9,34 @@ layout( binding = 3 ) uniform sampler2D blue_noise_dither_pattern;
 
 #define M_PI 3.1415926535897932384626433832795
 
-#define MAX_STEPS 1000
-#define MAX_DIST  18.
-#define EPSILON   0.0001 // closest surface distance
+#define MAX_STEPS 300
+#define MAX_DIST  5.
+#define EPSILON   0.00012 // closest surface distance
 
 #define MAX_BOUNCES 10
 
 #define AA 2
 
 uniform int frame;         // used to cycle the blue noise values over time
+
+// uniform uint wang_seed;
+uint seed = 0;
+// from demofox
+// https://blog.demofox.org/2020/05/25/casual-shadertoy-path-tracing-1-basic-camera-diffuse-emissive/
+uint wang_hash(){
+    seed = uint(seed ^ uint(61)) ^ uint(seed >> uint(16));
+    seed *= uint(9);
+    seed = seed ^ (seed >> 4);
+    seed *= uint(0x27d4eb2d);
+    seed = seed ^ (seed >> 15);
+    return seed;
+}
+
+float RandomFloat01(){
+    return float(wang_hash()) / 4294967296.0;
+}
+
+
 
 uniform vec3 basic_diffuse;
 uniform vec3 sky_color;
@@ -1846,12 +1865,13 @@ float screen(vec3 p) {
     return min(max(d1,abs(p.x-.3)-.01),max(d2,abs(p.x+2.3)-.01));
 }
 float daae(vec3 pos) {
+    escape = 0;
     vec3 tpos=pos;
     tpos.z=abs(2.-mod(tpos.z,4.));
     vec4 p=vec4(tpos,1.5);
     float y=max(0.,.35-abs(pos.y-3.35))/.35;
 
-    for (int i=0; i<8; i++) {p=formula(p);}
+    for (int i=0; i<8; i++) {p=formula(p); escape+=length(p);}
     float fr=max(-tpos.x-4.,(length(max(vec2(0.),p.yz-3.)))/p.w);
 
     float sc=screen(tpos);
@@ -1880,14 +1900,69 @@ float lens_de(vec3 p){
     float sphere1 = distance(prot, vec3(0,center1,0)) - radius1;
     float sphere2 = distance(prot, vec3(0,center2,0)) - radius2;
     
-    // dfinal = fOpIntersectionRound(sphere1, sphere2, 0.01); 
-    dfinal = fOpIntersectionChamfer(sphere1, sphere2, 0.01); 
+    dfinal = fOpIntersectionRound(sphere1, sphere2, 0.03); 
+    // dfinal = fOpIntersectionChamfer(sphere1, sphere2, 0.1); 
     // dfinal = max(sphere1, sphere2); 
+
+
+    seed = 6942069;
+
+    // if(dfinal < 0)
+        for(int i = 0; i < 105; i++)
+            dfinal = max(dfinal, -distance(vec3(RandomFloat01(), RandomFloat01(), RandomFloat01())*0.4, p) + 0.02*RandomFloat01());
+
+
+
     
-    // return dfinal/lens_scale_factor;
-    return max(daae(p), dfinal/lens_scale_factor);
+    return dfinal/lens_scale_factor;
 }
 
+
+
+
+float newde( vec3 p ){
+  float s = 2.;
+  float e = 0.;
+  for(int j=0;++j<7;)
+    p.xz=abs(p.xz)-2.3,
+    p.z>p.x?p=p.zyx:p,
+    p.z=1.5-abs(p.z-1.3+sin(p.z)*.2),
+    p.y>p.x?p=p.yxz:p,
+    p.x=3.-abs(p.x-5.+sin(p.x*3.)*.2),
+    p.y>p.x?p=p.yxz:p,
+    p.y=.978-abs(p.y-.4),
+    e=12.*clamp(.3/min(dot(p,p),1.),.0,1.)+
+    2.*clamp(.1/min(dot(p,p),1.),.0,1.),
+    p=e*p-vec3(7,1,1),
+    s*=e;
+  return length(p)/s;
+}
+
+
+
+#define fold45(p)(p.y>p.x)?p.yx:p
+float dega(vec3 p) {
+  float scale = 2.1, off0 = .8, off1 = .3, off2 = .83;
+  vec3 off =vec3(2.,.2,.1);
+  float s=1.0;
+  for(int i = 0;++i<20;) { 
+    p.xy = abs(p.xy);
+    p.xy = fold45(p.xy);
+    p.y -= off0;
+    p.y = -abs(p.y);
+    p.y += off0;
+    p.x += off1;
+    p.xz = fold45(p.xz);
+    p.x -= off2;
+    p.xz = fold45(p.xz);
+    p.x += off1;
+    p -= off;
+    p *= scale;
+    p += off;
+    s *= scale;
+  }
+  return length(p)/s;
+}
 
 float de(vec3 p){
 
@@ -1897,88 +1972,75 @@ float de(vec3 p){
 
     refractive_hit = false;
     
-		float box_size = 0.65;
+		// float box_size = 0.65;
 
-		float top_and_bottom = min(fPlane(p, vec3(0,1,0), box_size), fPlane(p, vec3(0,-1,0), box_size));
-		float left_wall = fPlane(p, vec3(1,0,0), box_size);
-		float right_wall = fPlane(p, vec3(-1,0,0), box_size);
-		float back_wall = fPlane(p, vec3(0,0,-1), box_size);
+		// float top_and_bottom = min(fPlane(p, vec3(0,1,0), box_size), fPlane(p, vec3(0,-1,0), box_size));
+		// float left_wall = fPlane(p, vec3(1,0,0), box_size);
+		// float right_wall = fPlane(p, vec3(-1,0,0), box_size);
+		// float back_wall = fPlane(p, vec3(0,0,-1), box_size);
 		// float front_wall = min(fPlane(p, vec3(0,0,1), 1.5*box_size), min(.65-length(fract(p+.5)-.5),p.y+.2));
 		// float front_wall = fPlane(p, vec3(0,0,1), 1.5*box_size);
 		// float front_wall = wde(p*5.)/5.;
-		float front_wall = menger_spone((p+vec3(0.3,0,0))*5.)/5.;
+		// float front_wall = menger_spone((p+vec3(0.3,-0.4,0))*5.)/5.;
 		// float front_wall = fssde(p*35.)/35.;
 
-		float top_bottom_back = min(top_and_bottom, back_wall);
+		// float top_bottom_back = min(top_and_bottom, back_wall);
 
-		float walls = min(min(min(left_wall, right_wall), top_bottom_back), front_wall);
-		float light = min(distance(p, vec3(0,box_size+0.2,0)), distance(p, vec3(0,-(box_size+0.2),0))) - 0.3;
+		// float walls = min(min(min(left_wall, right_wall), top_bottom_back), front_wall);
+    float dlight1 = fPlane(p, vec3(0,1,0), 1.1);
+    float dlight2 = fPlane(p, vec3(0,-1,0), 1.1);
+		float dlight = min(dlight1, dlight2);
 
-		float walls_and_light = min(walls, light);
+		// float walls_and_light = min(walls, light);
 
 		float width = 0.5;
 		vec3 boxsize = vec3(1.618*width, 2.*width/9., width);
 		vec3 offset = vec3(0.032);
 
-		float center_box = fBox(p, boxsize);
-
-		center_box = max(center_box, -(distance(porig.xz, vec2(0))-0.35));
-
-		// float icosa = max(fIcosahedron(p, 0.3), 0.02*ssde(50.*p));
 		float lens_distance = (entering_refractive ? -1. : 1.) * lens_de(p); // if inside, consider the negative
 
-		pModInterval1(p.x, 0.1, -5., 5.);
 
-		// float light_box = min(max(fBox(p, vec3(0.0004, 5., 5.)), icosa), sde(p));
+    // pModInterval1(p.x, 0.1, -5., 5.);
+		// pModInterval1(p.y, 0.025, -50., 50.);
+    // float center_box = dega(p*75)/75;
 
-		pModInterval1(p.y, 0.025, -50., 50.);
-		center_box = max(center_box, fBox(p, vec3(3., 0.005, 3.)));
+		// float dfinal = min(center_box, lens_distance);
+		float dfinal = lens_distance;
 
-		// float focus_object = min(min(min(front_cross, back_cross), center_box), icosa);
-		float focus_object = min(center_box, lens_distance);
+    float dfract = deee(rotate3D(1.,vec3(1.))*porig);
+    // float dfract = newde((rotate3D(1.,vec3(1.))*porig)*80.)/80.;
+    dfinal = min(dfinal, dfract);
+    dfinal = min(dfinal, dlight);
 
-		float dfinal = min(walls_and_light, focus_object);
 
-		if(dfinal == left_wall)
+		if(dfinal == dfract)
 		{
-        albedo = vec3(1,0,0);
-		}
-
-		if(dfinal == right_wall)
-		{
-        albedo = vec3(0,1,0);
-		}
-
-		if(dfinal == back_wall)
-		{
-        albedo = vec3(1,1,0);
-		}
-
-		if(dfinal == front_wall)
-		{
-			albedo = vec3(0.8,0.514,0.27);
-      // current_emission = max((pal( escape, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20) ))-vec3(0.,0.2*sin(escape),0.2)*cos(escape), vec3(0));
-		}
-
-		if(dfinal == top_and_bottom)
-		{
-			albedo = vec3(1,1,1);
+        // current_emission = vec3(1., 0.9, 0.8)*0.05;
+        albedo = vec3(0.6,0.3,0.1);
 		}
 
 		if(dfinal == lens_distance)
 		{
-			albedo = vec3(1,0.98,0.95);
+			albedo = vec3(1.,0.99,0.97);
       if(dfinal < EPSILON){
           refractive_hit = true;
           entering_refractive = !entering_refractive;
+          // current_emission = 2.*pal( escape, vec3(0.5,0.5,0.5),vec3(0.5,0.5,0.5),vec3(1.0,1.0,1.0),vec3(0.0,0.10,0.20));
       }
 		}
 
-		if(dfinal == light)
+		if(dfinal == dlight1)
 		{
-			current_emission = vec3(1., 0.9, 0.8)*600.;
+			current_emission = vec3(0.2, 0.5, 0.4)*5;
 			albedo = vec3(1.);
 		}
+    
+		if(dfinal == dlight2)
+		{
+			current_emission = vec3(0.1, 0.1, 1.)*5;
+			albedo = vec3(1.);
+		}
+
 		return dfinal;
 
 }
@@ -2112,22 +2174,6 @@ uvec4 pcg4d(vec2 s)
 }
 
 
-// from demofox
-// https://blog.demofox.org/2020/05/25/casual-shadertoy-path-tracing-1-basic-camera-diffuse-emissive/
-uint seed = uint(uint(global_loc.x) * uint(1973) + uint(global_loc.y) * uint(9277) + uint(time+frame) * uint(26699)) | uint(1);;
-uint wang_hash(){
-    seed = uint(seed ^ uint(61)) ^ uint(seed >> uint(16));
-    seed *= uint(9);
-    seed = seed ^ (seed >> 4);
-    seed *= uint(0x27d4eb2d);
-    seed = seed ^ (seed >> 15);
-    return seed;
-}
-
-float RandomFloat01(){
-    return float(wang_hash()) / 4294967296.0;
-}
-
 vec3 RandomUnitVector(){
     float z = RandomFloat01() * 2.0f - 1.0f;
     float a = RandomFloat01() * 2. * M_PI;
@@ -2196,11 +2242,11 @@ vec3 get_color_for_ray(vec3 ro_in, vec3 rd_in){
             ro += 2. * EPSILON * normal;
         
             vec3 reflected = reflect(ro-old_ro, normal);
-            vec3 temp = mix(reflected, RandomUnitVector(), 0.8);
+            vec3 temp = mix(reflected, RandomUnitVector(), 0.1);
             vec3 randomvector_specular = normalize((1.+EPSILON)*normal + temp);
             vec3 randomvector_diffuse  = normalize((1.+EPSILON)*normal + RandomUnitVector());
 
-            rd = mix(randomvector_diffuse, randomvector_specular, 0.2);
+            rd = mix(randomvector_diffuse, randomvector_specular, 0.7);
 
             final_color += throughput*current_emission;
             throughput *= albedo;
@@ -2302,6 +2348,8 @@ float calcAO( in vec3 pos, in vec3 nor )
 
 void main()
 {
+    seed = uint(uint(global_loc.x) * uint(1973) + uint(global_loc.y) * uint(9277) + uint(time+frame) * uint(26699)) | uint(1);;
+
     // check image bounds - on pass, begin checking the ray against the scene representation
     if(global_loc.x < dimensions.x && global_loc.y < dimensions.y){
     vec4 col = vec4(0, 0, 0, 1);
@@ -2384,6 +2432,8 @@ void main()
         // // do a mix here, between col and the fog color, with the selected depth falloff term
         // col.rgb = mix(col.rgb, sky_color.rgb, depth_term);
 
+        col.rgb *= exposure;
+
         float depth_term; 
 
         switch(depth_falloff)
@@ -2429,7 +2479,6 @@ void main()
             default: break;
         }
 
-        col.rgb *= exposure;
         
         // tonemapping
         switch(tonemap_mode)

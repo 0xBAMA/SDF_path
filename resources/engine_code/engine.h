@@ -161,7 +161,7 @@ private:
 	glm::vec3 basis_x, basis_y, basis_z;
 
 	float gamma_correction = 2.2;
-	int current_tmode = 0;
+	int current_tmode = 6;
     int current_colorspace = CHROMAMAX;
     int current_noise_func = BAYER;
     int current_dither_mode = EXPONENTIAL;

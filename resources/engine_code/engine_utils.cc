@@ -500,23 +500,19 @@ void engine::control_window()
     ImGui::SliderFloat("lens radius 1", &lens_radius_1, 0.1, 100.0);
     ImGui::SliderFloat("lens radius 2", &lens_radius_2, 0.1, 100.0);
     ImGui::SliderFloat("lens thickness", &lens_thickness, 0.1, 10.0);
-    ImGui::SliderFloat("lens rotate", &lens_rotate, 0.1, 100.0);
+    ImGui::SliderFloat("lens rotate", &lens_rotate, -45, 45);
     ImGui::Text("");
-    ImGui::SliderFloat("lens IOR", &lens_ir, 0.1, 10.0);
+    ImGui::SliderFloat("lens IOR", &lens_ir, 0.1, 7.0);
 
     
-    ImGui::EndTabItem();
-  }
-  if(ImGui::BeginTabItem("Render Settings"))
-  {
     ImGui::Text("");
     ImGui::SliderFloat(" FoV ", &fov, 0.001, 4.);
     ImGui::Text("");
-    ImGui::SliderFloat(" position jitter ", &jitterfactor, 0.001, 0.25);
+    ImGui::SliderFloat(" position jitter ", &jitterfactor, 0.001, 0.05);
     ImGui::Text("");
-    ImGui::SliderFloat(" focus distance ", &focusdistance, 0.001, 5.);
+    ImGui::SliderFloat(" focus distance ", &focusdistance, 0.0001, 5.);
     ImGui::Text("");
-    ImGui::SliderFloat(" exposure ", &exposure, 0.001, 4.);
+    ImGui::SliderFloat(" exposure ", &exposure, 0.001, 28.);
     ImGui::Text("");
     ImGui::ColorEdit3("Fog Color", (float*)&clear_color);
     ImGui::Text("");
@@ -528,7 +524,7 @@ void engine::control_window()
     ImGui::Combo("Depth Falloff", &depth_selector, dmodes, IM_ARRAYSIZE(dmodes));
 
     // ao scale
-    ImGui::SliderFloat(" AO Scale ", &AO_scale, 0.001, 1.);
+    // ImGui::SliderFloat(" AO Scale ", &AO_scale, 0.001, 1.);
 
     // tonemap methodology
     const char* tmodes[] = {"None (Linear)", "ACES (Narkowicz 2015)", "Unreal Engine 3", "Unreal Engine 4", "Uncharted 2", "Gran Turismo", "Modified Gran Turismo", "Rienhard", "Modified Rienhard", "jt", "robobo1221s", "robo", "reinhardRobo", "jodieRobo", "jodieRobo2", "jodieReinhard", "jodieReinhard2"};
@@ -808,6 +804,8 @@ void engine::draw_everything() {
     struct offset{ int x; int y; bool touched;};
     static std::vector<offset> offsets;
 
+    static auto first_time_p = std::chrono::high_resolution_clock::now();
+
     // construct list of offsets - previously this is the regular grid across the image
     static bool first_time = true;
     if(first_time){
@@ -828,9 +826,9 @@ void engine::draw_everything() {
     }else{ // sampling process
 
       static long unsigned int offsets_offset = 0;
-
+      static auto update_begin = max(std::chrono::high_resolution_clock::now(), first_time_p);
+      
       // process them off the shuffled vector, until a maximum of 16 milliseconds has passed, to maintain 60fps
-      auto update_begin = std::chrono::high_resolution_clock::now();
       for(size_t i = 0; i < offsets.size(); i++){
         // stop condititions - millisecond count is over 16, or you're out of entries on the offsets vector
         if(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - update_begin).count() >= 16) break;
@@ -846,12 +844,11 @@ void engine::draw_everything() {
           std::shuffle(offsets.begin(), offsets.end(), generator);
           sample_counter++;
         }
-
-        // SDL_Delay(10);
-
         // invoke the shader for this tile
         glDispatchCompute( TILESIZE / 32, TILESIZE / 32, 1 ); //workgroup is 8x8x1, so divide each x and y by 8
       }
+      
+      update_begin = std::chrono::high_resolution_clock::now();
     }
 
     // sync to ensure the raymarched image is in the texture
@@ -981,6 +978,17 @@ void engine::draw_everything() {
       }
 
 
+      if(event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_r && (SDL_GetModState() & KMOD_SHIFT))
+      {
+        sample_counter = 0;
+        std::vector<uint8_t> data;
+        data.resize(WIDTH*HEIGHT*4);
+        glBindTexture(GL_TEXTURE_RECTANGLE, accumulator_texture);
+        glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA32F, WIDTH, HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, &data[0]);
+        glMemoryBarrier( GL_SHADER_IMAGE_ACCESS_BARRIER_BIT );
+      }
+
+      
       if(event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_w)
         rotation_about_x -= SDL_GetModState() & KMOD_SHIFT ? 0.008 : 0.03;
 
