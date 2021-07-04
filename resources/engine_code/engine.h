@@ -147,7 +147,7 @@ private:
 
 	int sample_counter = 0;
 
-	float fov = 0.382;
+	float fov = 0.152;
 	// float fov = 1.;
 
 	// position

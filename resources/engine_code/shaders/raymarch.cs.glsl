@@ -1905,11 +1905,16 @@ float lens_de(vec3 p){
     // dfinal = max(sphere1, sphere2); 
 
 
-    seed = 6942069;
+    // seed = 6942069;
 
-    // if(dfinal < 0)
-        for(int i = 0; i < 105; i++)
-            dfinal = max(dfinal, -distance(vec3(RandomFloat01(), RandomFloat01(), RandomFloat01())*0.4, p) + 0.02*RandomFloat01());
+    pModInterval1(p.x, 0.1, -10., 10.);
+		pModInterval1(p.y, 0.25, -10., 10.);
+    pModInterval1(p.z, 0.1, -10., 10.);
+
+    
+    if(dfinal < 0)
+        for(int i = 0; i < 15; i++)
+            dfinal = max(dfinal, -distance(vec3(RandomFloat01(), RandomFloat01(), RandomFloat01())*0.01, p) + 0.002*RandomFloat01());
 
 
 
