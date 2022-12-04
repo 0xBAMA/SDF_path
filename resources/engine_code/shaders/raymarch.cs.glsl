@@ -1487,7 +1487,7 @@ float fractal_de102(vec3 p){
 
 // by gaz
 float fractal_de165(vec3 p){
-    float s=5., e;
+    float s=5., e = 0.0;
     p=p/dot(p,p)+1.;
     for(int i=0;i++<8;p*=e)
         p=1.-abs(p-1.),
